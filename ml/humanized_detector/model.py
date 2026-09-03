@@ -53,7 +53,7 @@ class MultiWindowClassifier(nn.Module):
         self.attention = nn.Linear(config.hidden_size, 1) if pooling == "attention" else None
         self.classifier = nn.Linear(config.hidden_size, 1)
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def encode_windows(self, input_ids: torch.Tensor) -> torch.Tensor:
         if input_ids.ndim != 3:
             raise ValueError("input_ids must have shape [batch, windows, tokens]")
         batch_size, window_count, token_count = input_ids.shape
@@ -70,7 +70,10 @@ class MultiWindowClassifier(nn.Module):
             assert self.attention is not None
             scores = self.attention(embeddings).squeeze(-1).masked_fill(~valid_windows, float("-inf"))
             pooled = (torch.softmax(scores, dim=1).unsqueeze(-1) * embeddings).sum(dim=1)
-        return self.classifier(pooled).squeeze(-1)
+        return pooled
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        return self.classifier(self.encode_windows(input_ids)).squeeze(-1)
 
 
 class StructuralOnlyClassifier(nn.Module):
@@ -82,3 +85,26 @@ class StructuralOnlyClassifier(nn.Module):
 
     def forward(self, features: torch.Tensor) -> torch.Tensor:
         return self.layers(features).squeeze(-1)
+
+
+class FusedMultiWindowClassifier(nn.Module):
+    """Combine shared multi-window text evidence with cached structural features."""
+
+    def __init__(self, config: ModelConfig, feature_count: int, pooling: str = "mean", gated: bool = False, feature_dropout: float = 0.15) -> None:
+        super().__init__()
+        self.gated = gated
+        self.text_model = MultiWindowClassifier(config, pooling=pooling)
+        self.feature_projection = nn.Sequential(nn.Dropout(feature_dropout), nn.Linear(feature_count, config.hidden_size), nn.GELU())
+        self.gate = nn.Linear(config.hidden_size * 2, config.hidden_size) if gated else None
+        self.classifier = nn.Linear(config.hidden_size if gated else config.hidden_size * 2, 1)
+
+    def forward(self, input_ids: torch.Tensor, features: torch.Tensor) -> torch.Tensor:
+        text_embedding = self.text_model.encode_windows(input_ids)
+        feature_embedding = self.feature_projection(features)
+        if self.gated:
+            assert self.gate is not None
+            gate = torch.sigmoid(self.gate(torch.cat([text_embedding, feature_embedding], dim=-1)))
+            combined = gate * text_embedding + (1 - gate) * feature_embedding
+        else:
+            combined = torch.cat([text_embedding, feature_embedding], dim=-1)
+        return self.classifier(combined).squeeze(-1)

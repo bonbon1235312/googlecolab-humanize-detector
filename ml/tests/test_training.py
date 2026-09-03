@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-from humanized_detector.model import ModelConfig, MultiWindowClassifier, StructuralOnlyClassifier, TinyTransformerClassifier
+from humanized_detector.model import FusedMultiWindowClassifier, ModelConfig, MultiWindowClassifier, StructuralOnlyClassifier, TinyTransformerClassifier
 from humanized_detector.train import smooth_binary_labels, train_model
 
 
@@ -38,6 +38,15 @@ def test_structural_only_model_returns_one_logit_per_text() -> None:
     model = StructuralOnlyClassifier(feature_count=6, hidden_size=12)
 
     assert model(torch.ones((3, 6))).shape == (3,)
+
+
+def test_fusion_models_return_one_logit_per_text() -> None:
+    windows = torch.ones((2, 3, 8), dtype=torch.long)
+    features = torch.ones((2, 6))
+    config = ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8)
+
+    assert FusedMultiWindowClassifier(config, feature_count=6, gated=False)(windows, features).shape == (2,)
+    assert FusedMultiWindowClassifier(config, feature_count=6, gated=True)(windows, features).shape == (2,)
 
 
 def test_train_model_exports_checkpoint_and_metrics(tmp_path: Path) -> None:
