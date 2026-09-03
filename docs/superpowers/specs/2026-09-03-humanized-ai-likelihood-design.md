@@ -15,9 +15,9 @@ Use the MIT-licensed [PADBen](https://huggingface.co/datasets/JonathanZha/PADBen
 - label `0`: original human-written text;
 - label `1`: third-iteration LLM paraphrases of generated text (deep paraphrase attack).
 
-The adapter downloads data only into a local or Colab/Drive cache, validates the `text`, `label`, and source-group identifier fields, then writes ignored JSONL splits. It preserves punctuation, casing, and whitespace. It rejects blank passages and exact normalized duplicates.
+The adapter downloads data only into a local or Colab/Drive cache, validates PADBen's actual `idx`, `sentence`, and `label` fields, then writes ignored JSONL splits. It maps `sentence` to the project's `text` field, preserves punctuation, casing, and whitespace, and rejects blank passages and exact normalized duplicates.
 
-Rows sharing a PADBen source identifier must stay in the same split. The adapter treats `idx` as the group identifier only after validating that both class variants for a source share it; it fails with an actionable error if this assumption is false. A deterministic group-stratified 70/15/15 split uses seed `20260903`.
+PADBen exposes a unique row `idx`, not a source-pair/group identifier. The adapter therefore makes a deterministic stratified 70/15/15 row-level split with seed `20260903`, records this constraint in `report.json`, and explicitly warns that hidden source relatedness cannot be ruled out. Beemo remains the independent external robustness evaluation that guards against treating the PADBen holdout as a generalisation claim.
 
 ### Independent evaluation: Beemo
 
@@ -48,7 +48,7 @@ Training writes artifacts to Google Drive in Colab. Raw data, prepared text, tok
 
 Report accuracy, precision, recall, F1, ROC-AUC, confusion matrix, calibration bins, and metrics by length bucket for both the PADBen holdout and the separate Beemo evaluation. Report false-positive rate prominently because genuine human text must not be casually flagged.
 
-No metric is invented or copied from a source paper. The model card records the exact dataset configuration, group-split procedure, seed, tokenizer/model configuration, training environment, measured metrics, source licences, and limitations.
+No metric is invented or copied from a source paper. The model card records the exact dataset configuration, row-level split procedure and its leakage limitation, seed, tokenizer/model configuration, training environment, measured metrics, source licences, and limitations.
 
 ## API and web demo
 
