@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from humanized_detector.model import ModelConfig
-from humanized_detector.v3_train import make_token_windows, source_label_weights, train_v3_model
+from humanized_detector.v3_train import is_eligible_checkpoint, make_token_windows, source_label_weights, train_v3_model
 
 
 def test_make_token_windows_selects_beginning_middle_and_end() -> None:
@@ -21,6 +21,12 @@ def test_source_label_weights_balance_each_nonempty_stratum() -> None:
         totals[row["source"], row["label"]] = totals.get((row["source"], row["label"]), 0.0) + weight
 
     np.testing.assert_allclose(list(totals.values()), [1.0, 1.0, 1.0, 1.0])
+
+
+def test_checkpoint_selection_requires_development_roc_auc_and_human_fpr_guard() -> None:
+    assert is_eligible_checkpoint({"roc_auc": 0.7, "human_fpr": 0.04}, max_human_fpr=0.05)
+    assert not is_eligible_checkpoint({"roc_auc": 0.7, "human_fpr": 0.06}, max_human_fpr=0.05)
+    assert not is_eligible_checkpoint({"roc_auc": None, "human_fpr": 0.01}, max_human_fpr=0.05)
 
 
 def test_train_v3_model_writes_best_checkpoint_and_feature_normalizer(tmp_path: Path) -> None:

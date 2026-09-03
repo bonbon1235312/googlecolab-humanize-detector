@@ -12,7 +12,8 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 from .model import FusedMultiWindowClassifier, ModelConfig, MultiWindowClassifier, StructuralOnlyClassifier
 from .tokenizer import load_tokenizer, train_tokenizer
-from .train import _metrics, smooth_binary_labels
+from .train import smooth_binary_labels
+from .v3_evaluate import evaluate_binary
 from .v3_features import FEATURE_NAMES, FeatureNormalizer, extract_structural_features
 
 
@@ -48,6 +49,19 @@ def source_label_weights(rows: list[dict[str, object]]) -> list[float]:
         key = (str(row["source"]), int(row["label"]))
         counts[key] = counts.get(key, 0) + 1
     return [1.0 / counts[(str(row["source"]), int(row["label"]))] for row in rows]
+
+
+def is_eligible_checkpoint(metrics: dict[str, object], max_human_fpr: float) -> bool:
+    """Use development ranking quality only when the fixed human-FPR guard holds."""
+    roc_auc = metrics.get("roc_auc")
+    human_fpr = metrics.get("human_fpr")
+    return isinstance(roc_auc, (int, float)) and isinstance(human_fpr, (int, float)) and human_fpr <= max_human_fpr
+
+
+def _checkpoint_key(metrics: dict[str, object], max_human_fpr: float) -> tuple[float, float, float]:
+    if not is_eligible_checkpoint(metrics, max_human_fpr):
+        return (float("-inf"), float("-inf"), float("-inf"))
+    return (float(metrics["roc_auc"]), float(metrics.get("pr_auc") or float("-inf")), -float(metrics["human_fpr"]))
 
 
 class V3EncodedDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
@@ -99,7 +113,7 @@ def _predict(model: nn.Module, variant: str, loader: DataLoader, device: torch.d
     return np.asarray(labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path, config: ModelConfig, variant: str, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, weight_decay: float = 0.01, label_smoothing: float = 0.1) -> V3TrainingResult:
+def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path, config: ModelConfig, variant: str, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, weight_decay: float = 0.01, label_smoothing: float = 0.1, max_human_fpr: float = 0.05) -> V3TrainingResult:
     """Train one predeclared V3 ablation and retain its best development-F1 checkpoint."""
     torch.manual_seed(20260903)
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +136,7 @@ def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path,
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
     loss_fn = nn.BCEWithLogitsLoss()
-    best_f1 = -1.0
+    best_key = (float("-inf"), float("-inf"), float("-inf"))
     checkpoint = artifact_dir / "model.pt"
     metrics_path = artifact_dir / "development_metrics.json"
     for epoch in range(1, epochs + 1):
@@ -134,13 +148,16 @@ def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path,
             loss.backward()
             optimizer.step()
         labels, probabilities = _predict(model, variant, development_loader, device)
-        metrics = _metrics(labels, probabilities)
-        print(f"Epoch {epoch}/{epochs}: development_f1={metrics['f1']:.4f}")
-        if float(metrics["f1"]) > best_f1:
-            best_f1 = float(metrics["f1"])
+        metrics = evaluate_binary(labels, probabilities)
+        print(f"Epoch {epoch}/{epochs}: development_roc_auc={metrics['roc_auc']!s} human_fpr={metrics['human_fpr']!s}")
+        candidate_key = _checkpoint_key(metrics, max_human_fpr)
+        if candidate_key > best_key:
+            best_key = candidate_key
             torch.save({"model_config": config.__dict__, "variant": variant, "state_dict": model.state_dict()}, checkpoint)
             metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         scheduler.step()
+    if not checkpoint.exists():
+        raise RuntimeError(f"no development checkpoint met max_human_fpr={max_human_fpr}")
     return V3TrainingResult(checkpoint, metrics_path, normalizer_path)
 
 
@@ -153,8 +170,9 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--max-human-fpr", type=float, default=0.05)
     args = parser.parse_args()
-    result = train_v3_model(args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir, ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay)
+    result = train_v3_model(args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir, ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay, max_human_fpr=args.max_human_fpr)
     print(f"Saved checkpoint: {result.checkpoint}")
     print(f"Saved development metrics: {result.metrics_path}")
     print(f"Saved feature normalizer: {result.normalizer_path}")
