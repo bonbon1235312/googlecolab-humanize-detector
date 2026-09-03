@@ -13,7 +13,7 @@ from .v3_data import audit_split_boundaries
 @dataclass(frozen=True)
 class V3DataConfig:
     seed: int = 20260903
-    padben_samples_per_class: int = 20_000
+    padben_samples_per_class: int = 15_000
 
 
 def _normalise(text: str) -> str:

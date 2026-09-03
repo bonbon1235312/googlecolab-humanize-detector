@@ -5,6 +5,10 @@ from humanized_detector.beemo import BeemoRecord
 from humanized_detector.v3_prepare import V3DataConfig, prepare_v3_dataset
 
 
+def test_v3_default_padben_sample_size_fits_the_task5_class_capacity() -> None:
+    assert V3DataConfig().padben_samples_per_class == 15_000
+
+
 def _rows() -> list[dict[str, object]]:
     return ([{"idx": f"h{index}", "sentence": f"padben human example letter{chr(97 + index)} with enough distinct words", "label": 0} for index in range(12)] + [{"idx": f"a{index}", "sentence": f"padben paraphrased ai example letter{chr(97 + index)} with enough distinct words", "label": 1} for index in range(12)])
 
