@@ -12,7 +12,7 @@ Build a reproducible, from-scratch humanized-AI likelihood experiment that learn
 | Beemo | development source | lineage-isolated train, development, and calibration partitions |
 | GRADTEX Test C | final external OOD benchmark | download, hash, and manifest only until model selection and calibration finish |
 
-GRADTEX Test C is the final external benchmark because its four held-out scenario families are sentence-level polishing, middle completion, skeptical style rewriting, and maximal style rewriting. Final reporting must include an aggregate and one result per family. The project pins the Hugging Face dataset revision, downloaded-file SHA-256 values, source URL, split name, and a generated row-ID manifest before V3 training. Its texts and labels are never loaded by a V3 training, selection, or calibration command.
+GRADTEX Test C is the final external benchmark because its four held-out scenario families are sentence-level polishing, middle completion, skeptical style rewriting, and maximal style rewriting. Final reporting must include an aggregate and one result per family. The project pins Hugging Face revision `553d859da0255d75a39c385c208f7522a2007f53`, the downloaded `test.parquet` SHA-256, source URL, split name, and a generated row-ID manifest before V3 training. Its texts and labels are never loaded by a V3 training, selection, or calibration command.
 
 ## Provenance and splitting
 
