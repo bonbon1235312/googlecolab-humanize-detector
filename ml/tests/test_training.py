@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 
-from humanized_detector.model import ModelConfig, TinyTransformerClassifier
+from humanized_detector.model import ModelConfig, MultiWindowClassifier, StructuralOnlyClassifier, TinyTransformerClassifier
 from humanized_detector.train import smooth_binary_labels, train_model
 
 
@@ -16,6 +16,28 @@ def test_model_returns_one_logit_per_text() -> None:
     model = TinyTransformerClassifier(ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=16, dropout=0.15))
     assert model(torch.ones((3, 16), dtype=torch.long)).shape == (3,)
     assert model.encoder.layers[0].dropout.p == 0.15
+
+
+def test_multi_window_model_pools_shared_encoder_windows() -> None:
+    model = MultiWindowClassifier(ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8), pooling="mean")
+    windows = torch.ones((2, 3, 8), dtype=torch.long)
+
+    assert model(windows).shape == (2,)
+
+
+def test_multi_window_attention_ignores_all_padding_window() -> None:
+    torch.manual_seed(3)
+    model = MultiWindowClassifier(ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8), pooling="attention").eval()
+    one_window = torch.ones((1, 1, 8), dtype=torch.long)
+    padded_window = torch.cat([one_window, torch.zeros((1, 1, 8), dtype=torch.long)], dim=1)
+
+    torch.testing.assert_close(model(one_window), model(padded_window))
+
+
+def test_structural_only_model_returns_one_logit_per_text() -> None:
+    model = StructuralOnlyClassifier(feature_count=6, hidden_size=12)
+
+    assert model(torch.ones((3, 6))).shape == (3,)
 
 
 def test_train_model_exports_checkpoint_and_metrics(tmp_path: Path) -> None:
