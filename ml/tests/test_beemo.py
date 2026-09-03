@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from humanized_detector.beemo import BeemoRecord, group_split, load_beemo_rows
+from humanized_detector.beemo import BeemoRecord, group_split, load_beemo_rows, v3_group_split
 
 
 def test_group_split_keeps_prompt_versions_together() -> None:
@@ -21,4 +21,16 @@ def test_load_beemo_rows_expands_editing_variants() -> None:
 
     records = load_beemo_rows(rows)
 
-    assert [(record.variant, record.label) for record in records] == [("human", 0), ("expert_edit", 1), ("llama-3.1-70b_P1", 1), ("gpt-4o_P1", 1)]
+    assert [(record.variant, record.label) for record in records] == [("human", 0), ("raw_ai", 1), ("expert_edit", 1), ("llama-3.1-70b_P1", 1), ("gpt-4o_P1", 1)]
+    assert [record.provenance for record in records] == ["human", "raw_ai", "expert_edited_ai", "llm_edited_ai", "llm_edited_ai"]
+
+
+def test_v3_group_split_keeps_every_lineage_in_train_development_or_calibration() -> None:
+    records = [BeemoRecord(f"{group}-{variant}", int(variant != "human"), str(group), variant) for group in range(20) for variant in ("human", "raw_ai", "expert_edit")]
+
+    splits = v3_group_split(records, seed=7)
+
+    assert set(splits) == {"train", "development", "calibration"}
+    memberships = {record.group_id: name for name, rows in splits.items() for record in rows}
+    assert len(memberships) == 20
+    assert all(len({memberships[record.group_id] for record in records if record.group_id == group}) == 1 for group in memberships)
