@@ -46,7 +46,7 @@ No syntactic parser, contrastive loss, or domain-adversarial head is part of thi
 
 ## Training, selection, and calibration
 
-All variants retain AdamW, cosine scheduling, 0.15 Transformer dropout, 0.01 weight decay, and 0.1 binary label smoothing. The selected model is the highest Beemo-development ROC-AUC subject to a predeclared human false-positive-rate ceiling of 5% at the default operating threshold. Ties use PR-AUC, then lower human false-positive rate.
+All variants retain AdamW, cosine scheduling, 0.15 Transformer dropout, 0.01 weight decay, and 0.1 binary label smoothing. The selected model is the highest Beemo-development ROC-AUC. Ties use PR-AUC, then lower human false-positive rate. The operating threshold and its 5% human-false-positive-rate guard are selected only on the separate calibration partition.
 
 Temperature scaling and operating thresholds are fitted only after model selection, using the separate Beemo calibration partition. The public demo reports likelihood bands rather than authorship verdicts and has an abstention region selected on that calibration partition. It never presents the balanced-sampler output as a population probability.
 

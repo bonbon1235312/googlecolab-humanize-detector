@@ -23,10 +23,9 @@ def test_source_label_weights_balance_each_nonempty_stratum() -> None:
     np.testing.assert_allclose(list(totals.values()), [1.0, 1.0, 1.0, 1.0])
 
 
-def test_checkpoint_selection_requires_development_roc_auc_and_human_fpr_guard() -> None:
-    assert is_eligible_checkpoint({"roc_auc": 0.7, "human_fpr": 0.04}, max_human_fpr=0.05)
-    assert not is_eligible_checkpoint({"roc_auc": 0.7, "human_fpr": 0.06}, max_human_fpr=0.05)
-    assert not is_eligible_checkpoint({"roc_auc": None, "human_fpr": 0.01}, max_human_fpr=0.05)
+def test_checkpoint_selection_uses_development_ranking_before_calibration() -> None:
+    assert is_eligible_checkpoint({"roc_auc": 0.7, "human_fpr": 0.48})
+    assert not is_eligible_checkpoint({"roc_auc": None, "human_fpr": 0.01})
 
 
 def test_train_v3_model_writes_best_checkpoint_and_feature_normalizer(tmp_path: Path) -> None:

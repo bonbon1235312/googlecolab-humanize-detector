@@ -51,15 +51,14 @@ def source_label_weights(rows: list[dict[str, object]]) -> list[float]:
     return [1.0 / counts[(str(row["source"]), int(row["label"]))] for row in rows]
 
 
-def is_eligible_checkpoint(metrics: dict[str, object], max_human_fpr: float) -> bool:
-    """Use development ranking quality only when the fixed human-FPR guard holds."""
+def is_eligible_checkpoint(metrics: dict[str, object]) -> bool:
+    """Select by ranking quality; operating thresholds belong to calibration."""
     roc_auc = metrics.get("roc_auc")
-    human_fpr = metrics.get("human_fpr")
-    return isinstance(roc_auc, (int, float)) and isinstance(human_fpr, (int, float)) and human_fpr <= max_human_fpr
+    return isinstance(roc_auc, (int, float))
 
 
-def _checkpoint_key(metrics: dict[str, object], max_human_fpr: float) -> tuple[float, float, float]:
-    if not is_eligible_checkpoint(metrics, max_human_fpr):
+def _checkpoint_key(metrics: dict[str, object]) -> tuple[float, float, float]:
+    if not is_eligible_checkpoint(metrics):
         return (float("-inf"), float("-inf"), float("-inf"))
     return (float(metrics["roc_auc"]), float(metrics.get("pr_auc") or float("-inf")), -float(metrics["human_fpr"]))
 
@@ -113,7 +112,7 @@ def _predict(model: nn.Module, variant: str, loader: DataLoader, device: torch.d
     return np.asarray(labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path, config: ModelConfig, variant: str, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, weight_decay: float = 0.01, label_smoothing: float = 0.1, max_human_fpr: float = 0.05) -> V3TrainingResult:
+def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path, config: ModelConfig, variant: str, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, weight_decay: float = 0.01, label_smoothing: float = 0.1) -> V3TrainingResult:
     """Train one predeclared V3 ablation and retain its best development-F1 checkpoint."""
     torch.manual_seed(20260903)
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -150,14 +149,14 @@ def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path,
         labels, probabilities = _predict(model, variant, development_loader, device)
         metrics = evaluate_binary(labels, probabilities)
         print(f"Epoch {epoch}/{epochs}: development_roc_auc={metrics['roc_auc']!s} human_fpr={metrics['human_fpr']!s}")
-        candidate_key = _checkpoint_key(metrics, max_human_fpr)
+        candidate_key = _checkpoint_key(metrics)
         if candidate_key > best_key:
             best_key = candidate_key
             torch.save({"model_config": config.__dict__, "variant": variant, "state_dict": model.state_dict()}, checkpoint)
             metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         scheduler.step()
     if not checkpoint.exists():
-        raise RuntimeError(f"no development checkpoint met max_human_fpr={max_human_fpr}")
+        raise RuntimeError("development data did not contain both binary classes")
     return V3TrainingResult(checkpoint, metrics_path, normalizer_path)
 
 
@@ -170,9 +169,8 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
-    parser.add_argument("--max-human-fpr", type=float, default=0.05)
     args = parser.parse_args()
-    result = train_v3_model(args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir, ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay, max_human_fpr=args.max_human_fpr)
+    result = train_v3_model(args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir, ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay)
     print(f"Saved checkpoint: {result.checkpoint}")
     print(f"Saved development metrics: {result.metrics_path}")
     print(f"Saved feature normalizer: {result.normalizer_path}")
