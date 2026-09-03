@@ -7,11 +7,12 @@ A small Transformer classifier trained from random weights to estimate whether E
 - deterministic PADBen `exhaustive-task5` preparation;
 - byte-level BPE plus a compact four-layer Transformer;
 - validation-F1 checkpoint selection and ONNX export;
+- AdamW weight decay, cosine learning-rate scheduling, dropout, and binary label smoothing;
 - a Colab notebook that stores only generated artifacts in Drive.
 
 ## Fastest path: Google Colab
 
-Open `notebooks/train_humanized_ai_detector.ipynb` in Colab, select **T4 GPU**, and run cells from top to bottom. The notebook downloads PADBen to the runtime, saves the model/tokenizer/metrics under `MyDrive/humanized-ai-likelihood-artifacts`, and never puts a dataset or model in Git.
+Open `notebooks/train_humanized_ai_detector.ipynb` in Colab, select **T4 GPU**, and run cells from top to bottom. The notebook downloads PADBen to the runtime, saves the tuned model/tokenizer/metrics under `MyDrive/humanized-ai-likelihood-artifacts-v2`, and never puts a dataset or model in Git.
 
 ## Important limitation
 

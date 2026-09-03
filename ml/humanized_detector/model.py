@@ -13,6 +13,7 @@ class ModelConfig:
     heads: int = 6
     layers: int = 4
     max_tokens: int = 256
+    dropout: float = 0.15
 
 
 class TinyTransformerClassifier(nn.Module):
@@ -20,7 +21,13 @@ class TinyTransformerClassifier(nn.Module):
         super().__init__()
         self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.position_embedding = nn.Embedding(config.max_tokens, config.hidden_size)
-        layer = nn.TransformerEncoderLayer(config.hidden_size, config.heads, config.hidden_size * 4, batch_first=True)
+        layer = nn.TransformerEncoderLayer(
+            config.hidden_size,
+            config.heads,
+            config.hidden_size * 4,
+            dropout=config.dropout,
+            batch_first=True,
+        )
         self.encoder = nn.TransformerEncoder(layer, num_layers=config.layers)
         self.classifier = nn.Linear(config.hidden_size, 1)
 

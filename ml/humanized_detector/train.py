@@ -56,7 +56,23 @@ def _predict(model: nn.Module, loader: DataLoader, device: torch.device) -> tupl
     return np.asarray(labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def train_model(train_file: Path, validation_file: Path, artifact_dir: Path, config: ModelConfig, epochs: int = 6, batch_size: int = 64) -> TrainingResult:
+def smooth_binary_labels(labels: torch.Tensor, smoothing: float) -> torch.Tensor:
+    """Move binary targets slightly toward 0.5 to reduce overconfident fits."""
+    return labels * (1.0 - smoothing) + 0.5 * smoothing
+
+
+def train_model(
+    train_file: Path,
+    validation_file: Path,
+    artifact_dir: Path,
+    config: ModelConfig,
+    epochs: int = 6,
+    batch_size: int = 64,
+    learning_rate: float = 3e-5,
+    weight_decay: float = 0.01,
+    scheduler: str = "cosine",
+    label_smoothing: float = 0.1,
+) -> TrainingResult:
     torch.manual_seed(20260903); artifact_dir.mkdir(parents=True, exist_ok=True)
     tokenizer_dir = train_tokenizer(train_file, artifact_dir / "tokenizer", config.vocab_size)
     config = replace(config, vocab_size=len(load_tokenizer(tokenizer_dir).get_vocab()))
@@ -64,32 +80,40 @@ def train_model(train_file: Path, validation_file: Path, artifact_dir: Path, con
     train_loader = DataLoader(EncodedDataset(train_texts, train_labels, tokenizer_dir, config.max_tokens), batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(EncodedDataset(val_texts, val_labels, tokenizer_dir, config.max_tokens), batch_size=batch_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = TinyTransformerClassifier(config).to(device); optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4); loss_fn = nn.BCEWithLogitsLoss()
+    model = TinyTransformerClassifier(config).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6) if scheduler == "cosine" else None
+    loss_fn = nn.BCEWithLogitsLoss()
     best_f1 = -1.0; checkpoint = artifact_dir / "model.pt"; metrics_path = artifact_dir / "validation_metrics.json"
     for epoch in range(1, epochs + 1):
         model.train()
         for ids, labels in train_loader:
-            optimizer.zero_grad(); loss = loss_fn(model(ids.to(device)), labels.to(device)); loss.backward(); optimizer.step()
+            optimizer.zero_grad()
+            smoothed = smooth_binary_labels(labels.to(device), label_smoothing)
+            loss = loss_fn(model(ids.to(device)), smoothed); loss.backward(); optimizer.step()
         labels, probabilities = _predict(model, val_loader, device); metrics = _metrics(labels, probabilities)
         print(f"Epoch {epoch}/{epochs}: validation_f1={metrics['f1']:.4f}")
         if float(metrics["f1"]) > best_f1:
             best_f1 = float(metrics["f1"]); torch.save({"model_config": config.__dict__, "state_dict": model.state_dict()}, checkpoint); metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+        if lr_scheduler is not None:
+            lr_scheduler.step()
     return TrainingResult(checkpoint, metrics_path)
 
 
-def run_experiment(data_dir: Path, artifact_dir: Path, epochs: int = 6, batch_size: int = 64) -> dict[str, Path]:
-    result = train_model(data_dir / "train.jsonl", data_dir / "validation.jsonl", artifact_dir, ModelConfig(vocab_size=4_000), epochs, batch_size)
+def run_experiment(data_dir: Path, artifact_dir: Path, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, scheduler: str = "cosine", dropout: float = 0.15, weight_decay: float = 0.01, label_smoothing: float = 0.1) -> dict[str, Path]:
+    config = ModelConfig(vocab_size=4_000, dropout=dropout)
+    result = train_model(data_dir / "train.jsonl", data_dir / "validation.jsonl", artifact_dir, config, epochs, batch_size, learning_rate, weight_decay, scheduler, label_smoothing)
     payload = torch.load(result.checkpoint, map_location="cpu", weights_only=True); model_config = ModelConfig(**payload["model_config"]); model = TinyTransformerClassifier(model_config); model.load_state_dict(payload["state_dict"])
     texts, labels = load_jsonl(data_dir / "test.jsonl"); loader = DataLoader(EncodedDataset(texts, labels, artifact_dir / "tokenizer", model_config.max_tokens), batch_size=batch_size)
     actual, probabilities = _predict(model, loader, torch.device("cpu")); test_path = artifact_dir / "test_metrics.json"; test_path.write_text(json.dumps(_metrics(actual, probabilities), indent=2), encoding="utf-8")
-    destination = artifact_dir / "model.onnx"; torch.onnx.export(model, torch.ones((1, 256), dtype=torch.long), destination, input_names=["input_ids"], output_names=["logits"], dynamic_axes={"input_ids": {0: "batch"}, "logits": {0: "batch"}}, opset_version=18)
+    destination = artifact_dir / "model.onnx"; torch.onnx.export(model, torch.ones((1, model_config.max_tokens), dtype=torch.long), destination, input_names=["input_ids"], output_names=["logits"], dynamic_axes={"input_ids": {0: "batch"}, "logits": {0: "batch"}}, opset_version=18)
     return {"checkpoint": result.checkpoint, "validation_metrics": result.metrics_path, "test_metrics": test_path, "onnx_model": destination}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(); parser.add_argument("--data-dir", type=Path, required=True); parser.add_argument("--artifacts-dir", type=Path, required=True); parser.add_argument("--epochs", type=int, default=6); parser.add_argument("--batch-size", type=int, default=64)
+    parser = argparse.ArgumentParser(); parser.add_argument("--data-dir", type=Path, required=True); parser.add_argument("--artifacts-dir", type=Path, required=True); parser.add_argument("--epochs", type=int, default=6); parser.add_argument("--batch-size", type=int, default=64); parser.add_argument("--lr", type=float, default=3e-5); parser.add_argument("--scheduler", choices=("none", "cosine"), default="cosine"); parser.add_argument("--dropout", type=float, default=0.15); parser.add_argument("--weight-decay", type=float, default=0.01); parser.add_argument("--label-smoothing", type=float, default=0.1)
     args = parser.parse_args()
-    for name, path in run_experiment(args.data_dir, args.artifacts_dir, args.epochs, args.batch_size).items(): print(f"Saved {name}: {path}")
+    for name, path in run_experiment(args.data_dir, args.artifacts_dir, args.epochs, args.batch_size, args.lr, args.scheduler, args.dropout, args.weight_decay, args.label_smoothing).items(): print(f"Saved {name}: {path}")
 
 
 if __name__ == "__main__": main()
