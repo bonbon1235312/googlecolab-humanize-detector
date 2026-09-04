@@ -112,9 +112,26 @@ def _predict(model: nn.Module, variant: str, loader: DataLoader, device: torch.d
     return np.asarray(labels, dtype=int), np.asarray(probabilities, dtype=float)
 
 
-def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path, config: ModelConfig, variant: str, epochs: int = 6, batch_size: int = 64, learning_rate: float = 3e-5, weight_decay: float = 0.01, label_smoothing: float = 0.1) -> V3TrainingResult:
+def train_v3_model(
+    train_file: Path,
+    development_file: Path,
+    artifact_dir: Path,
+    config: ModelConfig,
+    variant: str,
+    epochs: int = 6,
+    batch_size: int = 64,
+    learning_rate: float = 3e-5,
+    weight_decay: float = 0.01,
+    label_smoothing: float = 0.1,
+    warmup_steps: int = 0,
+    grad_clip_norm: float | None = None,
+) -> V3TrainingResult:
     """Train one predeclared V3 ablation and retain its best development-F1 checkpoint."""
     torch.manual_seed(20260903)
+    if warmup_steps < 0:
+        raise ValueError("warmup_steps must be non-negative")
+    if grad_clip_norm is not None and grad_clip_norm <= 0:
+        raise ValueError("grad_clip_norm must be positive when supplied")
     artifact_dir.mkdir(parents=True, exist_ok=True)
     train_rows = load_v3_jsonl(train_file)
     development_rows = load_v3_jsonl(development_file)
@@ -133,7 +150,19 @@ def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path,
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = _create_model(config, variant).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
+    if warmup_steps:
+        total_steps = max(epochs * len(train_loader), 1)
+        minimum_scale = min(1.0, 1e-6 / learning_rate)
+
+        def schedule_multiplier(step: int) -> float:
+            if step < warmup_steps:
+                return float(step + 1) / warmup_steps
+            progress = min(1.0, (step - warmup_steps) / max(total_steps - warmup_steps, 1))
+            return minimum_scale + (1.0 - minimum_scale) * 0.5 * (1.0 + np.cos(np.pi * progress))
+
+        scheduler: torch.optim.lr_scheduler.LRScheduler | None = torch.optim.lr_scheduler.LambdaLR(optimizer, schedule_multiplier)
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
     loss_fn = nn.BCEWithLogitsLoss()
     best_key = (float("-inf"), float("-inf"), float("-inf"))
     checkpoint = artifact_dir / "model.pt"
@@ -145,16 +174,32 @@ def train_v3_model(train_file: Path, development_file: Path, artifact_dir: Path,
             logits = _logits(model, variant, windows.to(device), features.to(device))
             loss = loss_fn(logits, smooth_binary_labels(labels.to(device), label_smoothing))
             loss.backward()
+            if grad_clip_norm is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
             optimizer.step()
+            if warmup_steps:
+                scheduler.step()
         labels, probabilities = _predict(model, variant, development_loader, device)
         metrics = evaluate_binary(labels, probabilities)
         print(f"Epoch {epoch}/{epochs}: development_roc_auc={metrics['roc_auc']!s} human_fpr={metrics['human_fpr']!s}")
         candidate_key = _checkpoint_key(metrics)
         if candidate_key > best_key:
             best_key = candidate_key
-            torch.save({"model_config": config.__dict__, "variant": variant, "state_dict": model.state_dict()}, checkpoint)
+            torch.save({
+                "model_config": config.__dict__,
+                "variant": variant,
+                "state_dict": model.state_dict(),
+                "training_config": {
+                    "learning_rate": learning_rate,
+                    "weight_decay": weight_decay,
+                    "label_smoothing": label_smoothing,
+                    "warmup_steps": warmup_steps,
+                    "grad_clip_norm": grad_clip_norm,
+                },
+            }, checkpoint)
             metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-        scheduler.step()
+        if not warmup_steps:
+            scheduler.step()
     if not checkpoint.exists():
         raise RuntimeError("development data did not contain both binary classes")
     return V3TrainingResult(checkpoint, metrics_path, normalizer_path)
@@ -169,8 +214,15 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--label-smoothing", type=float, default=0.1)
+    parser.add_argument("--warmup-steps", type=int, default=0)
+    parser.add_argument("--grad-clip-norm", type=float)
     args = parser.parse_args()
-    result = train_v3_model(args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir, ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay)
+    result = train_v3_model(
+        args.data_dir / "train.jsonl", args.data_dir / "development.jsonl", args.artifacts_dir,
+        ModelConfig(vocab_size=4_000), args.variant, args.epochs, args.batch_size, args.lr, args.weight_decay,
+        args.label_smoothing, args.warmup_steps, args.grad_clip_norm,
+    )
     print(f"Saved checkpoint: {result.checkpoint}")
     print(f"Saved development metrics: {result.metrics_path}")
     print(f"Saved feature normalizer: {result.normalizer_path}")

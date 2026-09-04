@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import torch
 
 from humanized_detector.model import ModelConfig
 from humanized_detector.v3_calibrate import calibrate_checkpoint
@@ -38,6 +39,26 @@ def test_train_v3_model_writes_best_checkpoint_and_feature_normalizer(tmp_path: 
 
     assert result.checkpoint.exists()
     assert result.normalizer_path.exists()
+
+
+def test_train_v3_model_records_nondefault_warmup_clipping_and_smoothing(tmp_path: Path) -> None:
+    rows = [
+        {"id": "h1", "text": "human authored response alpha", "label": 0, "source": "padben"},
+        {"id": "h2", "text": "human authored response beta", "label": 0, "source": "padben"},
+        {"id": "a1", "text": "generated response alpha", "label": 1, "source": "beemo"},
+        {"id": "a2", "text": "generated response beta", "label": 1, "source": "beemo"},
+    ]
+    for name in ("train", "development"):
+        (tmp_path / f"{name}.jsonl").write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+
+    result = train_v3_model(
+        tmp_path / "train.jsonl", tmp_path / "development.jsonl", tmp_path / "artifacts",
+        ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8), "text_mean",
+        epochs=1, batch_size=2, learning_rate=1e-4, label_smoothing=0.02, warmup_steps=1, grad_clip_norm=1.0,
+    )
+    payload = torch.load(result.checkpoint, map_location="cpu", weights_only=True)
+
+    assert payload["training_config"] == {"learning_rate": 1e-4, "weight_decay": 0.01, "label_smoothing": 0.02, "warmup_steps": 1, "grad_clip_norm": 1.0}
 
 
 def test_calibrate_checkpoint_writes_operating_threshold(tmp_path: Path) -> None:
