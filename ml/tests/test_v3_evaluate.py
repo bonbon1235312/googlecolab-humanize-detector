@@ -25,6 +25,15 @@ def test_metrics_by_field_keeps_unseen_scenarios_separate() -> None:
     assert result["polish_sentence"]["roc_auc"] == 1.0
 
 
+def test_metrics_by_field_uses_the_supplied_calibrated_threshold() -> None:
+    rows = [{"scenario": "polish_sentence", "label": 0}, {"scenario": "polish_sentence", "label": 1}]
+
+    result = metrics_by_field(rows, [0.6, 0.7], "scenario", threshold=0.7)
+
+    assert result["polish_sentence"]["human_fpr"] == 0.0
+    assert result["polish_sentence"]["recall"] == 1.0
+
+
 def test_freeze_external_benchmark_hashes_files_without_reading_labels(tmp_path: Path) -> None:
     benchmark = tmp_path / "gradtex-test-c"
     benchmark.mkdir()

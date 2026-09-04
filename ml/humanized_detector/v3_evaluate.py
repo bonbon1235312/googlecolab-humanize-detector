@@ -40,7 +40,9 @@ def evaluate_binary(labels: Sequence[int], probabilities: Sequence[float], thres
     return {"n": int(len(actual)), "accuracy": float(accuracy_score(actual, predicted)), "precision": float(precision_score(actual, predicted, zero_division=0)), "recall": float(recall_score(actual, predicted, zero_division=0)), "f1": float(f1_score(actual, predicted, zero_division=0)), "roc_auc": roc_auc, "pr_auc": pr_auc, "human_fpr": human_fpr, "tpr_at_1pct_fpr": tpr_at_1pct_fpr, "brier_score": float(brier_score_loss(actual, scores)), "expected_calibration_error": _expected_calibration_error(actual, scores)}
 
 
-def metrics_by_field(rows: Sequence[dict[str, object]], probabilities: Sequence[float], field: str) -> dict[str, dict[str, float | int | None]]:
+def metrics_by_field(
+    rows: Sequence[dict[str, object]], probabilities: Sequence[float], field: str, threshold: float = 0.5
+) -> dict[str, dict[str, float | int | None]]:
     """Evaluate every source, provenance, or external scenario independently."""
     if len(rows) != len(probabilities):
         raise ValueError("rows and probabilities must have the same length")
@@ -49,7 +51,7 @@ def metrics_by_field(rows: Sequence[dict[str, object]], probabilities: Sequence[
         labels, scores = grouped[str(row[field])]
         labels.append(int(row["label"]))
         scores.append(float(probability))
-    return {name: evaluate_binary(labels, scores) for name, (labels, scores) in grouped.items()}
+    return {name: evaluate_binary(labels, scores, threshold) for name, (labels, scores) in grouped.items()}
 
 
 def freeze_external_benchmark(benchmark_dir: Path, manifest_path: Path, dataset: str, revision: str, split: str) -> dict[str, object]:

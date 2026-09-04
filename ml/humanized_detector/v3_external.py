@@ -68,8 +68,8 @@ def evaluate_gradtex_test_c(benchmark_file: Path, artifact_dir: Path) -> dict[st
         "variant": variant,
         "calibrated_threshold": threshold,
         "aggregate": evaluate_binary(labels, probabilities, threshold),
-        "per_scenario": metrics_by_field(rows, probabilities, "scenario"),
-        "per_scenario_family": metrics_by_field(rows, probabilities, "scenario_family"),
+        "per_scenario": metrics_by_field(rows, probabilities, "scenario", threshold),
+        "per_scenario_family": metrics_by_field(rows, probabilities, "scenario_family", threshold),
     }
     (artifact_dir / "gradtex_test_c_metrics.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     return result
