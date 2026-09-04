@@ -18,6 +18,10 @@ Open `notebooks/train_humanized_ai_detector.ipynb` in Colab, select **T4 GPU**, 
 
 The result is a similarity score relative to PADBen's deeply paraphrased-AI examples. It does not prove that a person used AI, a paraphrasing tool, or any particular humanizer. External Beemo evaluation is required before making a robustness claim.
 
+## V4 provenance-safe data workflow
+
+V4 starts with data integrity rather than a larger model: a shared manifest preserves lineage, transformation provenance, content hashes, and split roles for all model families. It blocks cross-split duplicate/near-duplicate leakage and prevents non-final workflows from reading sealed-test data. See [the V4 data protocol](docs/v4-data-protocol.md).
+
 ## Sources
 
 - [PADBen](https://huggingface.co/datasets/JonathanZha/PADBen), MIT licence.

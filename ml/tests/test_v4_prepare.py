@@ -69,3 +69,12 @@ def test_writer_requires_reproducibility_metadata_for_a_sealed_source(tmp_path: 
 
     with pytest.raises(ValueError, match="raw_download_sha256"):
         write_v4_dataset([record], tmp_path, {"source_locator": "https://example.test", "revision": "v1"})
+
+
+def test_v4_data_protocol_documents_sealed_manifest_rules() -> None:
+    protocol = Path(__file__).parents[2] / "docs" / "v4-data-protocol.md"
+
+    text = protocol.read_text(encoding="utf-8")
+    assert "sealed_test" in text
+    assert "GRADTEX" in text
+    assert "metadata_manifest.json" in text
