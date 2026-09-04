@@ -1,3 +1,6 @@
+import pytest
+
+from humanized_detector.v4_audit import audit_v4_records
 from humanized_detector.v4_manifest import V4Record, manifest_digest, metadata_manifest
 
 
@@ -38,6 +41,13 @@ def test_v4_record_normalises_text_and_calculates_its_hash() -> None:
     assert record.text_sha256 != "provided-by-source"
 
 
+def test_v4_record_rejects_invalid_binary_label() -> None:
+    row = make_row("human:1", "lineage:1", "A human passage.", "train", label=2)
+
+    with pytest.raises(ValueError, match="label"):
+        V4Record.from_mapping(row)
+
+
 def test_metadata_manifest_excludes_text_and_has_a_stable_digest() -> None:
     record = V4Record.from_mapping(make_row("human:1", "lineage:1", "Hidden source text.", "train"))
 
@@ -46,3 +56,44 @@ def test_metadata_manifest_excludes_text_and_has_a_stable_digest() -> None:
 
     assert "Hidden source text." not in str(first)
     assert manifest_digest(first) == manifest_digest(second)
+
+
+def test_audit_rejects_a_train_eligible_sealed_record() -> None:
+    row = make_row("sealed:1", "lineage:1", "sealed human text", "sealed_test", sealed=True, train_eligible=True)
+
+    with pytest.raises(ValueError, match="sealed_test"):
+        audit_v4_records([V4Record.from_mapping(row)])
+
+
+def test_audit_rejects_a_lineage_crossing_split_boundaries() -> None:
+    train = V4Record.from_mapping(make_row("a", "lineage:x", "one two three four five six", "train"))
+    development = V4Record.from_mapping(make_row("b", "lineage:x", "different lineage variant", "development"))
+
+    with pytest.raises(ValueError, match="lineage crosses"):
+        audit_v4_records([train, development])
+
+
+def test_audit_rejects_a_parent_crossing_split_boundaries() -> None:
+    parent = V4Record.from_mapping(make_row("parent", "lineage:x", "one two three four five six", "train"))
+    child = V4Record.from_mapping(make_row("child", "lineage:y", "a generated variant", "development", parent_id="parent"))
+
+    with pytest.raises(ValueError, match="parent"):
+        audit_v4_records([parent, child])
+
+
+def test_audit_rejects_exact_duplicates_across_splits() -> None:
+    train = V4Record.from_mapping(make_row("a", "la", "one two three four five six", "train"))
+    development = V4Record.from_mapping(make_row("b", "lb", "one two three four five six", "development"))
+
+    with pytest.raises(ValueError, match="exact duplicate"):
+        audit_v4_records([train, development])
+
+
+def test_audit_rejects_cross_split_near_duplicates() -> None:
+    words = [f"word{index}" for index in range(100)]
+    train = V4Record.from_mapping(make_row("a", "la", " ".join(words), "train"))
+    words[-1] = "replacement"
+    development = V4Record.from_mapping(make_row("b", "lb", " ".join(words), "development"))
+
+    with pytest.raises(ValueError, match="near duplicate"):
+        audit_v4_records([train, development])

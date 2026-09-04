@@ -39,12 +39,15 @@ class V4Record:
     @classmethod
     def from_mapping(cls, record: Mapping[str, object]) -> "V4Record":
         text = _normalise_text(str(record["text"]))
+        label = int(record["label"])
+        if label not in (0, 1):
+            raise ValueError(f"label must be 0 or 1, got {label!r}")
         return cls(
             id=str(record["id"]),
             lineage_id=str(record["lineage_id"]),
             text=text,
             text_sha256=_text_sha256(text),
-            label=int(record["label"]),
+            label=label,
             source=str(record["source"]),
             domain=str(record["domain"]),
             provenance=str(record["provenance"]),
