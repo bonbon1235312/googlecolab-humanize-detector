@@ -57,8 +57,16 @@ def main() -> None:
 
     revision = args.revision or HfApi().dataset_info("liamdugan/raid", repo_type="dataset").sha
     rows = load_dataset("liamdugan/raid", "raid", split="train", streaming=True, revision=revision)
+    print(f"Streaming pinned RAID train source at revision {revision}; no model evaluation will run.")
+
+    def progress_rows() -> Iterable[Mapping[str, object]]:
+        for index, row in enumerate(rows, start=1):
+            if index % 100_000 == 0:
+                print(f"Scanned {index:,} source rows...")
+            yield row
+
     report = seal_raid_rows(
-        rows,
+        progress_rows(),
         args.output_dir,
         target_pairs=args.target_pairs,
         seed=args.seed,
