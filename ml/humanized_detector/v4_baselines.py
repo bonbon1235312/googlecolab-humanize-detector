@@ -36,6 +36,7 @@ def train_tfidf_baseline(
     development_rows: Sequence[dict[str, object]],
     artifact_dir: Path,
     variant: str,
+    calibration_rows: Sequence[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """Fit a TF-IDF + logistic-regression control model on training rows only."""
     if not train_rows or not development_rows:
@@ -60,13 +61,16 @@ def train_tfidf_baseline(
     joblib.dump(model, artifact_dir / "model.joblib")
     (artifact_dir / "development_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_predictions(artifact_dir / "development_predictions.jsonl", development_rows, probabilities)
+    if calibration_rows is not None:
+        calibration_probabilities = model.predict_proba([str(row["text"]) for row in calibration_rows])[:, 1].tolist()
+        _write_predictions(artifact_dir / "calibration_predictions.jsonl", calibration_rows, calibration_probabilities)
     return metrics
 
 
 def run_tfidf_control(data_dir: Path, artifact_dir: Path, variant: str) -> dict[str, object]:
     """Run a baseline against V4's non-sealed control partitions."""
     partitions = load_v4_control_partitions(data_dir)
-    return train_tfidf_baseline(partitions["train"], partitions["development"], artifact_dir, variant)
+    return train_tfidf_baseline(partitions["train"], partitions["development"], artifact_dir, variant, partitions["calibration"])
 
 
 def main() -> None:

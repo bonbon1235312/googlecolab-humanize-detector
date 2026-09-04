@@ -77,3 +77,25 @@ Only run this after recording the 5M development metrics. It must use the exact 
 ## What not to do yet
 
 Do not read, train on, calibrate against, or evaluate `sealed_test`. Do not tune using GRADTEX or the sealed RAID-derived cohort. Once a single model/capacity is selected using development results, the next stage is threshold calibration from that selected model's `calibration_predictions.jsonl`; final RAID evaluation happens once after calibration is frozen.
+
+## 6. Compare fixed-human-FPR operating points
+
+After pulling the calibration update, rerun the character baseline once so it writes its calibration predictions. The Transformer already writes them during training.
+
+```python
+%cd /content/humanized-ai-likelihood
+!git pull -q
+%cd /content/humanized-ai-likelihood/ml
+!pip install -q -e .
+
+!python -u -m humanized_detector.v4_baselines --data-dir /content/drive/MyDrive/v4-data/control-v1 --artifacts-dir /content/drive/MyDrive/v4-artifacts/control-v1/char_tfidf_lr --variant char_tfidf_lr
+```
+
+Then freeze 1%, 2%, and 5% human-FPR thresholds from the same calibration partition for each model:
+
+```python
+!python -u -m humanized_detector.v4_calibrate --data-dir /content/drive/MyDrive/v4-data/control-v1 --artifacts-dir /content/drive/MyDrive/v4-artifacts/control-v1/char_tfidf_lr
+!python -u -m humanized_detector.v4_calibrate --data-dir /content/drive/MyDrive/v4-data/control-v1 --artifacts-dir /content/drive/MyDrive/v4-artifacts/control-v1/fusion_concat_5m
+```
+
+Each `calibration.json` contains ROC-AUC, PR-AUC, Brier score, expected calibration error, the frozen threshold and TPR at 1/2/5% FPR, source-level human FPR, and artifact size. Runtime latency is measured separately with the final selected deployment packaging rather than from a single Colab GPU run.

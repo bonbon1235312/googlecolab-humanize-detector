@@ -52,3 +52,4 @@ def test_control_baseline_runner_uses_only_nonsealed_partitions(tmp_path: Path) 
 
     assert result["variant"] == "word_tfidf_lr"
     assert (tmp_path / "artifacts" / "model.joblib").exists()
+    assert (tmp_path / "artifacts" / "calibration_predictions.jsonl").exists()
