@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import torch
+import pytest
 
 from humanized_detector.model import FusedMultiWindowClassifier, ModelConfig, MultiWindowClassifier, StructuralOnlyClassifier, TinyTransformerClassifier
 from humanized_detector.train import smooth_binary_labels, train_model
@@ -16,6 +17,22 @@ def test_model_returns_one_logit_per_text() -> None:
     model = TinyTransformerClassifier(ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=16, dropout=0.15))
     assert model(torch.ones((3, 16), dtype=torch.long)).shape == (3,)
     assert model.encoder.layers[0].dropout.p == 0.15
+
+
+def test_masked_mean_token_pooling_ignores_trailing_padding() -> None:
+    torch.manual_seed(7)
+    model = TinyTransformerClassifier(
+        ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8, token_pooling="masked_mean")
+    ).eval()
+    short = torch.tensor([[8, 9, 10]], dtype=torch.long)
+    padded = torch.tensor([[8, 9, 10, 0, 0]], dtype=torch.long)
+
+    torch.testing.assert_close(model.encode(short), model.encode(padded), rtol=1e-5, atol=1e-6)
+
+
+def test_model_config_rejects_unknown_token_pooling() -> None:
+    with pytest.raises(ValueError, match="token_pooling"):
+        ModelConfig(vocab_size=300, token_pooling="cls")
 
 
 def test_multi_window_model_pools_shared_encoder_windows() -> None:

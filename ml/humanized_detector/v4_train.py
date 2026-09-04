@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -55,9 +56,10 @@ def train_v4_transformer(
     batch_size: int,
     learning_rate: float,
     weight_decay: float,
+    token_pooling: str = "first",
 ) -> dict[str, object]:
     """Train a V4 fusion-concat control model without loading sealed data."""
-    config = model_config_for_capacity(4_000, capacity)
+    config = replace(model_config_for_capacity(4_000, capacity), token_pooling=token_pooling)
     partitions = load_v4_control_partitions(data_dir)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix="v4-control-") as temporary:
@@ -97,8 +99,9 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument("--token-pooling", choices=("first", "masked_mean"), default="first")
     args = parser.parse_args()
-    result = train_v4_transformer(args.data_dir, args.artifacts_dir, args.capacity, args.epochs, args.batch_size, args.lr, args.weight_decay)
+    result = train_v4_transformer(args.data_dir, args.artifacts_dir, args.capacity, args.epochs, args.batch_size, args.lr, args.weight_decay, args.token_pooling)
     print(json.dumps(result, indent=2))
 
 

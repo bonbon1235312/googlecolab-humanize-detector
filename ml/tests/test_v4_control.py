@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import torch
 
 from humanized_detector.v4_control import load_v4_control_partitions, model_config_for_capacity
 from humanized_detector.v4_train import train_v4_transformer
@@ -57,6 +58,30 @@ def test_v4_transformer_writes_calibration_predictions_without_retaining_corpus(
     assert result["capacity"] == "5m"
     assert (tmp_path / "artifacts" / "calibration_predictions.jsonl").exists()
     assert not (tmp_path / "artifacts" / "tokenizer" / "training_corpus.txt").exists()
+
+
+def test_v4_transformer_persists_requested_token_pooling(tmp_path: Path) -> None:
+    partitions = {
+        "train": [
+            {"id": "h1", "text": "A person writes an ordinary short paragraph.", "label": 0, "source": "test"},
+            {"id": "a1", "text": "A generated response uses patterned formal wording.", "label": 1, "source": "test"},
+        ],
+        "development": [
+            {"id": "h2", "text": "A human writes a different natural sentence.", "label": 0, "source": "test"},
+            {"id": "a2", "text": "Generated content repeats a formal response pattern.", "label": 1, "source": "test"},
+        ],
+        "calibration": [
+            {"id": "h3", "text": "Another human sentence for calibration.", "label": 0, "source": "test"},
+            {"id": "a3", "text": "Another generated sentence for calibration.", "label": 1, "source": "test"},
+        ],
+    }
+    for role, rows in partitions.items():
+        (tmp_path / f"{role}.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+    train_v4_transformer(tmp_path, tmp_path / "artifacts", "5m", 1, 2, 1e-4, 0.01, token_pooling="masked_mean")
+    payload = torch.load(tmp_path / "artifacts" / "model.pt", map_location="cpu", weights_only=True)
+
+    assert payload["model_config"]["token_pooling"] == "masked_mean"
 
 
 def test_control_run_guide_mentions_5m_and_forbids_sealed_evaluation() -> None:

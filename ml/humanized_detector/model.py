@@ -14,11 +14,17 @@ class ModelConfig:
     layers: int = 4
     max_tokens: int = 256
     dropout: float = 0.15
+    token_pooling: str = "first"
+
+    def __post_init__(self) -> None:
+        if self.token_pooling not in {"first", "masked_mean"}:
+            raise ValueError("token_pooling must be 'first' or 'masked_mean'")
 
 
 class TinyTransformerClassifier(nn.Module):
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
+        self.config = config
         self.token_embedding = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=0)
         self.position_embedding = nn.Embedding(config.max_tokens, config.hidden_size)
         layer = nn.TransformerEncoderLayer(
@@ -35,6 +41,9 @@ class TinyTransformerClassifier(nn.Module):
         positions = torch.arange(input_ids.size(1), device=input_ids.device).unsqueeze(0)
         padding = input_ids.eq(0)
         hidden = self.encoder(self.token_embedding(input_ids) + self.position_embedding(positions), src_key_padding_mask=padding)
+        if self.config.token_pooling == "masked_mean":
+            valid_tokens = (~padding).unsqueeze(-1).to(hidden.dtype)
+            return (hidden * valid_tokens).sum(dim=1) / valid_tokens.sum(dim=1).clamp_min(1)
         return hidden[:, 0]
 
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
