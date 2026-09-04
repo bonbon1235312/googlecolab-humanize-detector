@@ -91,3 +91,15 @@ def test_control_run_guide_mentions_5m_and_forbids_sealed_evaluation() -> None:
     assert "--capacity 5m" in text
     assert "sealed_test" in text
     assert "Do not" in text
+
+
+def test_v4_8_colab_notebook_contains_the_controlled_experiment_sequence() -> None:
+    notebook = Path(__file__).parents[2] / "notebooks" / "train_v4_8.ipynb"
+    payload = json.loads(notebook.read_text(encoding="utf-8"))
+    source = "\n".join("".join(cell["source"]) for cell in payload["cells"])
+
+    assert payload["nbformat"] == 4
+    assert "--token-pooling masked_mean" in source
+    assert "write_v4_fit_diagnostics" in source
+    assert "v4_calibrate" in source
+    assert "sealed RAID-derived" in source
