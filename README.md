@@ -22,6 +22,8 @@ The result is a similarity score relative to PADBen's deeply paraphrased-AI exam
 
 V4 starts with data integrity rather than a larger model: a shared manifest preserves lineage, transformation provenance, content hashes, and split roles for all model families. It blocks cross-split duplicate/near-duplicate leakage and prevents non-final workflows from reading sealed-test data. See [the V4 data protocol](docs/v4-data-protocol.md).
 
+The sealed V4 RAID-derived paraphrase cohort is tracked by hash and provenance only in [the sealed benchmark registry](docs/v4-sealed-benchmark-registry.md); its texts remain outside Git and must not be used before final evaluation.
+
 ## Sources
 
 - [PADBen](https://huggingface.co/datasets/JonathanZha/PADBen), MIT licence.
