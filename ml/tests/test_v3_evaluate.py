@@ -3,6 +3,7 @@ from pathlib import Path
 
 from humanized_detector.v3_evaluate import evaluate_binary, freeze_external_benchmark, metrics_by_field
 from humanized_detector.v3_calibrate import calibration_record, select_operating_threshold
+from humanized_detector.v3_external import gradtex_test_c_rows
 
 
 def test_evaluate_binary_reports_operating_and_calibration_metrics() -> None:
@@ -48,3 +49,14 @@ def test_calibration_record_reports_the_selected_operating_point() -> None:
     assert record["threshold"] == 0.7
     assert record["metrics"]["human_fpr"] == 0.0
     assert record["metrics"]["recall"] == 1.0
+
+
+def test_gradtex_test_c_rows_maps_human_label_to_internal_negative_class() -> None:
+    rows = gradtex_test_c_rows([
+        {"text": "human text", "binary_label": 1, "test_split": "C", "scenario": "human", "scenario_family": "human"},
+        {"text": "edited text", "binary_label": 0, "test_split": "C", "scenario": "polish_sentence", "scenario_family": "polish"},
+        {"text": "other split", "binary_label": 0, "test_split": "B", "scenario": "polish_token", "scenario_family": "polish"},
+    ])
+
+    assert [row["label"] for row in rows] == [0, 1]
+    assert [row["scenario"] for row in rows] == ["human", "polish_sentence"]
