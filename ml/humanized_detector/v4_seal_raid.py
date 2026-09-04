@@ -15,6 +15,12 @@ from .v4_raid import collect_raid_paraphrase_candidates, select_raid_paraphrase_
 RAID_SOURCE_LOCATOR = "https://huggingface.co/datasets/liamdugan/raid"
 
 
+def _resolve_revision(api: object, requested_revision: str | None) -> str:
+    if requested_revision is not None:
+        return requested_revision
+    return str(api.dataset_info("liamdugan/raid").sha)  # type: ignore[attr-defined]
+
+
 def seal_raid_rows(
     rows: Iterable[Mapping[str, object]],
     output_dir: Path,
@@ -55,7 +61,7 @@ def main() -> None:
     from datasets import load_dataset
     from huggingface_hub import HfApi
 
-    revision = args.revision or HfApi().dataset_info("liamdugan/raid", repo_type="dataset").sha
+    revision = _resolve_revision(HfApi(), args.revision)
     rows = load_dataset("liamdugan/raid", "raid", split="train", streaming=True, revision=revision)
     print(f"Streaming pinned RAID train source at revision {revision}; no model evaluation will run.")
 

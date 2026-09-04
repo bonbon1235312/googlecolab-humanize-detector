@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from humanized_detector.v4_seal_raid import seal_raid_rows
+from humanized_detector.v4_seal_raid import _resolve_revision, seal_raid_rows
 
 
 def _row(identifier: str, source_id: str, model: str, attack: str, generation: str) -> dict[str, object]:
@@ -44,3 +44,15 @@ def test_sealer_refuses_to_overwrite_an_existing_sealed_manifest(tmp_path: Path)
 
     with pytest.raises(FileExistsError, match="metadata_manifest"):
         seal_raid_rows(rows, tmp_path, target_pairs=1, seed=23, revision="pinned-revision", sealed_at="2026-09-04T12:00:00Z")
+
+
+def test_revision_resolution_supports_hub_clients_without_repo_type_keyword() -> None:
+    class Info:
+        sha = "resolved-revision"
+
+    class OlderHubClient:
+        def dataset_info(self, dataset_id: str) -> Info:
+            assert dataset_id == "liamdugan/raid"
+            return Info()
+
+    assert _resolve_revision(OlderHubClient(), None) == "resolved-revision"
