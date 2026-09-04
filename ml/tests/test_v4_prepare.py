@@ -68,7 +68,29 @@ def test_writer_requires_reproducibility_metadata_for_a_sealed_source(tmp_path: 
     record = V4Record.from_mapping(make_row("sealed:1", "l2", "Sealed secret", "sealed_test", sealed=True, train_eligible=False))
 
     with pytest.raises(ValueError, match="raw_download_sha256"):
-        write_v4_dataset([record], tmp_path, {"source_locator": "https://example.test", "revision": "v1"})
+        write_v4_dataset([record], tmp_path, {
+            "source_locator": "https://example.test",
+            "revision": "v1",
+            "row_selection_rule": "complete lineages only",
+            "selection_seed": 7,
+            "sealed_at": "2026-09-04T12:00:00Z",
+        })
+
+
+def test_writer_accepts_a_streamed_source_snapshot_hash_for_a_sealed_source(tmp_path: Path) -> None:
+    record = V4Record.from_mapping(make_row("sealed:1", "l2", "Sealed secret", "sealed_test", sealed=True, train_eligible=False))
+    source_metadata = {
+        "source_locator": "https://example.test",
+        "revision": "v1",
+        "source_snapshot_sha256": "abc123",
+        "row_selection_rule": "complete lineages only",
+        "selection_seed": 7,
+        "sealed_at": "2026-09-04T12:00:00Z",
+    }
+
+    report = write_v4_dataset([record], tmp_path, source_metadata)
+
+    assert report["checked_records"] == 1
 
 
 def test_v4_data_protocol_documents_sealed_manifest_rules() -> None:

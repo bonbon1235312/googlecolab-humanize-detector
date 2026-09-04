@@ -43,7 +43,7 @@ report = write_v4_dataset(
 print(report['metadata_manifest_sha256'])
 ```
 
-The writer produces one JSONL file per role plus `metadata_manifest.json`. The metadata manifest is safe to publish because it excludes text; it stores IDs, lineage IDs, text hashes, split counts, and the supplied source metadata. A manifest that contains `sealed_test` rows additionally requires `source_locator`, `revision`, `raw_download_sha256`, `row_selection_rule`, `selection_seed`, and `sealed_at`.
+The writer produces one JSONL file per role plus `metadata_manifest.json`. The metadata manifest is safe to publish because it excludes text; it stores IDs, lineage IDs, text hashes, split counts, and the supplied source metadata. A manifest that contains `sealed_test` rows additionally requires `source_locator`, `revision`, `row_selection_rule`, `selection_seed`, and `sealed_at`, plus either a binary `raw_download_sha256` or a deterministic `source_snapshot_sha256` when the source is streamed.
 
 ## What comes next
 

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from .v4_manifest import V4Record
 
@@ -65,3 +67,51 @@ def build_raid_paraphrase_pairs(rows: Sequence[Mapping[str, object]]) -> list[V4
         ai = _record(paraphrases[0], label=1, provenance="ai_paraphrased", parent_id=human.id)
         records.extend((human, ai))
     return records
+
+
+def collect_raid_paraphrase_candidates(rows: Iterable[Mapping[str, object]]) -> tuple[list[dict[str, object]], str]:
+    """Stream RAID rows while retaining one deterministic human/paraphrase candidate per source."""
+    families: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
+    for row in rows:
+        missing = sorted(RAID_REQUIRED_FIELDS - set(row))
+        if missing:
+            raise ValueError(f"RAID record is missing required fields: {', '.join(missing)}")
+        model = str(row["model"])
+        attack = str(row["attack"])
+        if not ((model == "human" and attack == "none") or (model != "human" and attack == "paraphrase")):
+            continue
+        source_id = str(row["source_id"])
+        stored = {field: row[field] for field in RAID_REQUIRED_FIELDS}
+        role = "human" if model == "human" else "paraphrase"
+        candidate_key = (str(stored["id"]),) if role == "human" else (str(stored["model"]), str(stored["id"]))
+        current = families[source_id].get(role)
+        current_key = None if current is None else ((str(current["id"]),) if role == "human" else (str(current["model"]), str(current["id"])))
+        if current_key is None or candidate_key < current_key:
+            families[source_id][role] = stored
+
+    candidates: list[dict[str, object]] = []
+    for source_id in sorted(families):
+        family = families[source_id]
+        if "human" in family and "paraphrase" in family:
+            candidates.extend((family["human"], family["paraphrase"]))
+    digest = hashlib.sha256()
+    for row in candidates:
+        digest.update(json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest.update(b"\n")
+    return candidates, digest.hexdigest()
+
+
+def select_raid_paraphrase_pairs(rows: Sequence[Mapping[str, object]], *, target_pairs: int, seed: int) -> list[V4Record]:
+    """Select a deterministic, source-family-safe subset of RAID paraphrase pairs."""
+    if target_pairs <= 0:
+        raise ValueError("target_pairs must be positive")
+    all_pairs = build_raid_paraphrase_pairs(rows)
+    families: dict[str, list[V4Record]] = defaultdict(list)
+    for record in all_pairs:
+        families[record.lineage_id].append(record)
+    ranked_families = sorted(
+        families.items(),
+        key=lambda item: (hashlib.sha256(f"{seed}:{item[0]}".encode("utf-8")).hexdigest(), item[0]),
+    )
+    selected = ranked_families[:target_pairs]
+    return [record for _, family in selected for record in family]

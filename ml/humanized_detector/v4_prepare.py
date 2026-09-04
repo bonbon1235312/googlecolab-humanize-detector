@@ -13,11 +13,11 @@ from .v4_manifest import V4Record, manifest_digest, metadata_manifest
 SEALED_SOURCE_METADATA_FIELDS = frozenset({
     "source_locator",
     "revision",
-    "raw_download_sha256",
     "row_selection_rule",
     "selection_seed",
     "sealed_at",
 })
+SEALED_SOURCE_HASH_FIELDS = frozenset({"raw_download_sha256", "source_snapshot_sha256"})
 
 
 def _write_json(path: Path, payload: Mapping[str, object]) -> None:
@@ -37,6 +37,8 @@ def write_v4_dataset(records: Sequence[V4Record], output_dir: Path, source_metad
         missing = sorted(SEALED_SOURCE_METADATA_FIELDS - set(source_metadata))
         if missing:
             raise ValueError(f"sealed source metadata is missing: {', '.join(missing)}")
+        if not SEALED_SOURCE_HASH_FIELDS.intersection(source_metadata):
+            raise ValueError("sealed source metadata is missing: raw_download_sha256 or source_snapshot_sha256")
     output_dir.mkdir(parents=True, exist_ok=True)
     for split in sorted(VALID_SPLITS):
         _write_jsonl(output_dir / f"{split}.jsonl", [record.to_row() for record in records if record.split == split])
