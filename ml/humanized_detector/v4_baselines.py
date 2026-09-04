@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -12,6 +13,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from .v3_evaluate import evaluate_binary
+from .v4_control import load_v4_control_partitions
 
 
 def _vectorizer(variant: str) -> TfidfVectorizer:
@@ -59,3 +61,22 @@ def train_tfidf_baseline(
     (artifact_dir / "development_metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_predictions(artifact_dir / "development_predictions.jsonl", development_rows, probabilities)
     return metrics
+
+
+def run_tfidf_control(data_dir: Path, artifact_dir: Path, variant: str) -> dict[str, object]:
+    """Run a baseline against V4's non-sealed control partitions."""
+    partitions = load_v4_control_partitions(data_dir)
+    return train_tfidf_baseline(partitions["train"], partitions["development"], artifact_dir, variant)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--artifacts-dir", type=Path, required=True)
+    parser.add_argument("--variant", choices=("word_tfidf_lr", "char_tfidf_lr"), required=True)
+    args = parser.parse_args()
+    print(json.dumps(run_tfidf_control(args.data_dir, args.artifacts_dir, args.variant), indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

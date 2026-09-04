@@ -115,6 +115,7 @@ git commit -m "feat: add V4 control partition and capacity helpers"
 
 **Interfaces:**
 - Produces `train_tfidf_baseline(train_rows, development_rows, artifact_dir, variant) -> dict[str, object]` where `variant` is exactly `word_tfidf_lr` or `char_tfidf_lr`.
+- Produces `run_tfidf_control(data_dir, artifact_dir, variant) -> dict[str, object]` and CLI `python -m humanized_detector.v4_baselines --data-dir ... --artifacts-dir ... --variant word_tfidf_lr`.
 - Writes `model.joblib`, `development_metrics.json`, and `development_predictions.jsonl` to the supplied artifact directory.
 
 - [ ] **Step 1: Write the failing word-baseline test**
