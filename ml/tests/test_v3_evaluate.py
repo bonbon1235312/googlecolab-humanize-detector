@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 from humanized_detector.v3_evaluate import evaluate_binary, freeze_external_benchmark, metrics_by_field
+from humanized_detector.v3_calibrate import calibration_record, select_operating_threshold
 
 
 def test_evaluate_binary_reports_operating_and_calibration_metrics() -> None:
@@ -33,3 +34,17 @@ def test_freeze_external_benchmark_hashes_files_without_reading_labels(tmp_path:
     assert manifest["dataset"] == "elisabeth-pl-pl/GRADTEX"
     assert manifest["files"][0]["sha256"]
     assert json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))["split"] == "test_c"
+
+
+def test_select_operating_threshold_maximises_recall_within_human_fpr_ceiling() -> None:
+    threshold = select_operating_threshold([0, 0, 1, 1], [0.1, 0.6, 0.7, 0.9], max_human_fpr=0.0)
+
+    assert threshold == 0.7
+
+
+def test_calibration_record_reports_the_selected_operating_point() -> None:
+    record = calibration_record([0, 0, 1, 1], [0.1, 0.6, 0.7, 0.9], max_human_fpr=0.0)
+
+    assert record["threshold"] == 0.7
+    assert record["metrics"]["human_fpr"] == 0.0
+    assert record["metrics"]["recall"] == 1.0

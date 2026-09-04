@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from humanized_detector.model import ModelConfig
+from humanized_detector.v3_calibrate import calibrate_checkpoint
 from humanized_detector.v3_train import is_eligible_checkpoint, make_token_windows, source_label_weights, train_v3_model
 
 
@@ -37,3 +38,16 @@ def test_train_v3_model_writes_best_checkpoint_and_feature_normalizer(tmp_path: 
 
     assert result.checkpoint.exists()
     assert result.normalizer_path.exists()
+
+
+def test_calibrate_checkpoint_writes_operating_threshold(tmp_path: Path) -> None:
+    rows = [{"id": f"h{index}", "text": f"human authored response letter {chr(97 + index)}", "label": 0, "source": "padben", "group_id": f"h{index}", "provenance": "human"} for index in range(4)] + [{"id": f"a{index}", "text": f"generated paraphrased response letter {chr(97 + index)}", "label": 1, "source": "beemo", "group_id": f"a{index}", "provenance": "raw_ai"} for index in range(4)]
+    for name in ("train", "calibration"):
+        (tmp_path / f"{name}.jsonl").write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+    artifact_dir = tmp_path / "artifacts"
+    train_v3_model(tmp_path / "train.jsonl", tmp_path / "calibration.jsonl", artifact_dir, ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8), variant="text_mean", epochs=1, batch_size=2)
+
+    record = calibrate_checkpoint(tmp_path / "calibration.jsonl", artifact_dir, max_human_fpr=0.05)
+
+    assert record["max_human_fpr"] == 0.05
+    assert (artifact_dir / "calibration.json").is_file()
