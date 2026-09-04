@@ -105,3 +105,14 @@ def write_v4_fit_diagnostics(data_dir: Path, artifact_dir: Path, bootstrap_itera
     }
     (artifact_dir / "fit_diagnostics.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return report
+
+
+def score_padben_diagnostic(diagnostic_dir: Path, artifact_dir: Path) -> dict[str, object]:
+    """Score the explicitly unused PADBen diagnostic without touching control calibration or final data."""
+    path = diagnostic_dir / "padben_diagnostic.jsonl"
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    labels, probabilities = _predict_checkpoint(rows, artifact_dir)
+    report = evaluate_binary(labels, probabilities)
+    report["cohort"] = "padben_unused_diagnostic"
+    (artifact_dir / "padben_diagnostic_metrics.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return report
