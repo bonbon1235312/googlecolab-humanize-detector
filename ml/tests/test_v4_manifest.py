@@ -58,6 +58,16 @@ def test_metadata_manifest_excludes_text_and_has_a_stable_digest() -> None:
     assert manifest_digest(first) == manifest_digest(second)
 
 
+def test_v4_record_preserves_text_safe_source_fields() -> None:
+    row = make_row("raid:a", "raid:source", "A paraphrased passage.", "sealed_test", sealed=True, train_eligible=False)
+    row["source_fields"] = {"raid_adv_source_id": "adv-1", "raid_model": "gpt-4", "raid_attack": "paraphrase"}
+
+    record = V4Record.from_mapping(row)
+
+    assert record.source_fields["raid_adv_source_id"] == "adv-1"
+    assert record.to_row()["source_fields"]["raid_model"] == "gpt-4"
+
+
 def test_audit_rejects_a_train_eligible_sealed_record() -> None:
     row = make_row("sealed:1", "lineage:1", "sealed human text", "sealed_test", sealed=True, train_eligible=True)
 

@@ -6,7 +6,7 @@ import hashlib
 import json
 import unicodedata
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
 
@@ -35,6 +35,7 @@ class V4Record:
     sealed: bool
     train_eligible: bool
     parent_id: str | None
+    source_fields: Mapping[str, object] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, record: Mapping[str, object]) -> "V4Record":
@@ -42,6 +43,13 @@ class V4Record:
         label = int(record["label"])
         if label not in (0, 1):
             raise ValueError(f"label must be 0 or 1, got {label!r}")
+        source_fields = record.get("source_fields", {})
+        if not isinstance(source_fields, Mapping):
+            raise ValueError("source_fields must be a mapping")
+        forbidden = {"text", "generation", "prompt"}
+        unsafe = sorted(str(key) for key in source_fields if str(key).casefold() in forbidden)
+        if unsafe:
+            raise ValueError(f"source_fields cannot contain raw text fields: {', '.join(unsafe)}")
         return cls(
             id=str(record["id"]),
             lineage_id=str(record["lineage_id"]),
@@ -58,6 +66,7 @@ class V4Record:
             sealed=bool(record["sealed"]),
             train_eligible=bool(record["train_eligible"]),
             parent_id=str(record["parent_id"]) if record["parent_id"] is not None else None,
+            source_fields=dict(source_fields),
         )
 
     def to_row(self) -> dict[str, object]:
@@ -77,6 +86,7 @@ class V4Record:
             "sealed": self.sealed,
             "train_eligible": self.train_eligible,
             "parent_id": self.parent_id,
+            "source_fields": dict(self.source_fields),
         }
 
 

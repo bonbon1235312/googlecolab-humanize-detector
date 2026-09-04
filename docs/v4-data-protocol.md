@@ -15,7 +15,7 @@ Every V4 record belongs to exactly one role:
 
 ## Record contract
 
-Every record has an immutable `id`, atomic `lineage_id`, normalised `text`, canonical `text_sha256`, binary label, source/domain, detailed provenance, generator/editor/transformation families, role, sealing state, training eligibility, and optional `parent_id`.
+Every record has an immutable `id`, atomic `lineage_id`, normalised `text`, canonical `text_sha256`, binary label, source/domain, detailed provenance, generator/editor/transformation families, role, sealing state, training eligibility, and optional `parent_id`. Dataset-specific, text-safe identifiers such as an external source ID or attack identifier belong in `source_fields`; raw text, prompts, and generations must never be copied there.
 
 Binary labels are `0` for genuine human-origin text—including benignly polished human text—and `1` for AI-origin text, including humanized or otherwise transformed AI text. Parent and child variants must remain in the same split.
 
