@@ -57,3 +57,12 @@ def test_v4_transformer_writes_calibration_predictions_without_retaining_corpus(
     assert result["capacity"] == "5m"
     assert (tmp_path / "artifacts" / "calibration_predictions.jsonl").exists()
     assert not (tmp_path / "artifacts" / "tokenizer" / "training_corpus.txt").exists()
+
+
+def test_control_run_guide_mentions_5m_and_forbids_sealed_evaluation() -> None:
+    guide = Path(__file__).parents[2] / "docs" / "v4-control-runs.md"
+
+    text = guide.read_text(encoding="utf-8")
+    assert "--capacity 5m" in text
+    assert "sealed_test" in text
+    assert "Do not" in text

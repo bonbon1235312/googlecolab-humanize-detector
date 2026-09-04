@@ -24,6 +24,8 @@ V4 starts with data integrity rather than a larger model: a shared manifest pres
 
 The sealed V4 RAID-derived paraphrase cohort is tracked by hash and provenance only in [the sealed benchmark registry](docs/v4-sealed-benchmark-registry.md); its texts remain outside Git and must not be used before final evaluation.
 
+Run the shared V4 control models in Colab using [the V4 control-run guide](docs/v4-control-runs.md). It builds only train/development/calibration data and deliberately excludes the sealed RAID cohort.
+
 ## Sources
 
 - [PADBen](https://huggingface.co/datasets/JonathanZha/PADBen), MIT licence.

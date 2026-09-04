@@ -22,6 +22,52 @@
 
 ---
 
+### Task 0: Convert eligible PADBen and Beemo data into a V4 control manifest
+
+**Files:**
+- Create: `ml/humanized_detector/v4_control_data.py`
+- Create: `ml/tests/test_v4_control_data.py`
+
+**Interfaces:**
+- Produces `V4ControlDataConfig(seed: int = 20260904, padben_samples_per_class: int = 15_000)`.
+- Produces `prepare_v4_control_dataset(padben_records, beemo_records, output_dir, config) -> dict[str, object]`.
+
+- [ ] **Step 1: Write the failing source-lineage test**
+
+```python
+def test_control_preparation_keeps_beemo_variants_atomic_and_records_the_raw_ai_parent(tmp_path: Path) -> None:
+    report = prepare_v4_control_dataset(padben_rows(), beemo_rows_for_three_prompt_groups(), tmp_path, V4ControlDataConfig(padben_samples_per_class=1))
+    rows = [json.loads(line) for path in tmp_path.glob("*.jsonl") for line in path.read_text(encoding="utf-8").splitlines()]
+    expert = next(row for row in rows if row["provenance"] == "expert_edited_ai")
+
+    assert report["split_counts"]
+    assert expert["parent_id"] in {row["id"] for row in rows}
+    assert len({row["split"] for row in rows if row["lineage_id"] == expert["lineage_id"]}) == 1
+```
+
+- [ ] **Step 2: Run the focused test and observe failure**
+
+Run: `pytest tests/test_v4_control_data.py::test_control_preparation_keeps_beemo_variants_atomic_and_records_the_raw_ai_parent -v`
+
+Expected: FAIL because `v4_control_data` does not exist.
+
+- [ ] **Step 3: Implement manifest conversion**
+
+Build one V4 record per selected PADBen text with its own lineage. Use `v3_group_split` for Beemo and create all Beemo variants in a prompt group with one common lineage. Assign the raw Beemo AI ID as the parent of expert and LLM edits when present. Call `write_v4_dataset` and do not add a `sealed_test` row.
+
+- [ ] **Step 4: Run the focused test, then all V4 control-data tests**
+
+Run: `pytest tests/test_v4_control_data.py -v`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add ml/humanized_detector/v4_control_data.py ml/tests/test_v4_control_data.py docs/superpowers/plans/2026-09-04-v4-control-model-tracks.md
+git commit -m "feat: prepare V4 control data from eligible sources"
+```
+
 ### Task 1: V4 non-sealed data access and capacity presets
 
 **Files:**
