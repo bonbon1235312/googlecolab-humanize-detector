@@ -17,7 +17,8 @@ def test_v51_model_handles_an_empty_window() -> None:
     assert torch.isfinite(logits).all()
 
 
-def test_v51_model_uses_film_and_cross_window_attention() -> None:
+def test_v51_model_uses_film_cross_window_attention_and_learned_window_pooling() -> None:
     model = V51FusedClassifier(V51ModelConfig(vocab_size=32, hidden_size=32, heads=4, layers=1, max_tokens=8), 23)
     assert model.cross_window_attention.batch_first is True
+    assert model.window_score.out_features == 1
     assert model.film[-1].out_features == 64

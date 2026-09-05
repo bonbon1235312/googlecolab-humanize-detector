@@ -53,6 +53,10 @@ class V51FusedClassifier(nn.Module):
             batch_first=True,
         )
         self.cross_window_norm = nn.LayerNorm(config.hidden_size)
+        # Scores choose each contextualized window's importance.  They do not
+        # compress the window vectors: the weighted sum still carries all 384
+        # dimensions into FiLM and the classifier.
+        self.window_score = nn.Linear(config.hidden_size, 1)
         self.film = nn.Sequential(
             nn.Linear(feature_count, config.hidden_size),
             nn.GELU(),
@@ -104,8 +108,10 @@ class V51FusedClassifier(nn.Module):
             need_weights=False,
         )
         windows = self.cross_window_norm(windows + contextual)
-        weights = valid_windows.unsqueeze(-1).to(windows.dtype)
-        text_embedding = (windows * weights).sum(dim=1) / weights.sum(dim=1).clamp_min(1)
+        window_logits = self.window_score(windows).squeeze(-1)
+        window_logits = window_logits.masked_fill(~valid_windows, float("-inf"))
+        weights = torch.softmax(window_logits, dim=1).unsqueeze(-1)
+        text_embedding = (windows * weights).sum(dim=1)
         gamma, beta = self.film(features).chunk(2, dim=-1)
         fused = (1 + torch.tanh(gamma)) * text_embedding + beta
         return self.head(fused).squeeze(-1)

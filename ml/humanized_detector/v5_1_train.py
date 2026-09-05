@@ -15,7 +15,7 @@ import torch
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
-from .tokenizer import load_tokenizer, train_tokenizer
+from .tokenizer import load_tokenizer
 from .train import smooth_binary_labels
 from .v3_features import FEATURE_NAMES, FeatureNormalizer, extract_structural_features
 from .v3_train import V3EncodedDataset, source_label_weights
@@ -46,6 +46,17 @@ def estimated_total_seconds(first_base_epoch_seconds: float, config: V51RunConfi
     if first_base_epoch_seconds <= 0:
         raise ValueError("first_base_epoch_seconds must be positive")
     return float(first_base_epoch_seconds * (config.base_epochs + config.curriculum_epochs))
+
+
+def copy_frozen_tokenizer(source_dir: Path, destination_dir: Path) -> Path:
+    """Copy the V4.8 tokenizer unchanged so V5.1 has identical boundaries."""
+    required = (source_dir / "vocab.json", source_dir / "merges.txt")
+    if not all(path.is_file() for path in required):
+        raise FileNotFoundError("frozen tokenizer must contain vocab.json and merges.txt")
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    for path in required:
+        shutil.copy2(path, destination_dir / path.name)
+    return destination_dir
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -138,7 +149,7 @@ def _train_stage(
     return {"best_epoch": best_epoch, "completed_epochs": completed, "best_report": best_report, "first_epoch_seconds": history[1]["elapsed_seconds"] if len(history) > 1 else None}
 
 
-def train_v51(data_dir: Path, output_dir: Path, run_config: V51RunConfig = V51RunConfig(), stage: str = "base", timing_only: bool = False) -> dict[str, object]:
+def train_v51(data_dir: Path, output_dir: Path, frozen_tokenizer_dir: Path, run_config: V51RunConfig = V51RunConfig(), stage: str = "base", timing_only: bool = False) -> dict[str, object]:
     """Run one V5.1 stage. Base must be completed before curriculum starts."""
     if stage not in {"base", "curriculum"}:
         raise ValueError("stage must be 'base' or 'curriculum'")
@@ -150,7 +161,7 @@ def train_v51(data_dir: Path, output_dir: Path, run_config: V51RunConfig = V51Ru
     base_dir = output_dir / "base"
     curriculum_dir = output_dir / "curriculum"
     if stage == "base":
-        tokenizer_dir = train_tokenizer(data_dir / "train.jsonl", base_dir / "tokenizer", 4_000)
+        tokenizer_dir = copy_frozen_tokenizer(frozen_tokenizer_dir, base_dir / "tokenizer")
         model_config = V51ModelConfig(vocab_size=len(load_tokenizer(tokenizer_dir).get_vocab()))
         raw_features = np.asarray([extract_structural_features(str(row["text"])) for row in train_rows])
         normalizer = FeatureNormalizer.fit(raw_features)
@@ -178,12 +189,12 @@ def train_v51(data_dir: Path, output_dir: Path, run_config: V51RunConfig = V51Ru
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", type=Path, required=True); parser.add_argument("--artifacts-dir", type=Path, required=True)
+    parser.add_argument("--data-dir", type=Path, required=True); parser.add_argument("--artifacts-dir", type=Path, required=True); parser.add_argument("--frozen-tokenizer-dir", type=Path, required=True)
     parser.add_argument("--stage", choices=("base", "curriculum"), required=True); parser.add_argument("--base-epochs", type=int, default=6); parser.add_argument("--curriculum-epochs", type=int, default=4)
     parser.add_argument("--batch-size", type=int, default=64); parser.add_argument("--lr", type=float, default=3e-5); parser.add_argument("--weight-decay", type=float, default=0.01); parser.add_argument("--label-smoothing", type=float, default=0.02); parser.add_argument("--warmup-fraction", type=float, default=0.05); parser.add_argument("--grad-clip-norm", type=float, default=1.0); parser.add_argument("--timing-only", action="store_true")
     args = parser.parse_args()
     config = V51RunConfig(args.base_epochs, args.curriculum_epochs, args.batch_size, args.lr, args.weight_decay, args.label_smoothing, args.warmup_fraction, args.grad_clip_norm)
-    print(json.dumps(train_v51(args.data_dir, args.artifacts_dir, config, args.stage, args.timing_only), indent=2, default=str))
+    print(json.dumps(train_v51(args.data_dir, args.artifacts_dir, args.frozen_tokenizer_dir, config, args.stage, args.timing_only), indent=2, default=str))
 
 
 if __name__ == "__main__":
