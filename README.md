@@ -26,6 +26,12 @@ The sealed V4 RAID-derived paraphrase cohort is tracked by hash and provenance o
 
 Run the shared V4 control models in Colab using [the V4 control-run guide](docs/v4-control-runs.md). It builds only train/development/calibration data and deliberately excludes the sealed RAID cohort.
 
+## V5 H1 curriculum continuation
+
+H1 continues the available V4.8 masked-mean checkpoint for four curriculum epochs. Sampling is hierarchical: PADBen human, PADBen humanized AI, Beemo human, and Beemo AI each receive 25% of the epoch; the Beemo-AI quarter progressively shifts toward expert-edited examples while lineages remain equally weighted. The untouched V4.8 checkpoint is also eligible to win, so continuation cannot silently replace it with a worse development checkpoint.
+
+Open [`notebooks/train_v5_h1.ipynb`](notebooks/train_v5_h1.ipynb) in Colab and run it one cell at a time. The notebook performs a fail-fast lineage/checkpoint preflight, trains with per-update warmup and cosine decay, saves a resumable last state after every epoch, selects checkpoints on expert/LLM-edited macro AUC with low-FPR tie-breakers, and freezes 1%, 2%, and 5% human-FPR calibration points. It does not read GRADTEX or the sealed RAID-derived cohort.
+
 ## Sources
 
 - [PADBen](https://huggingface.co/datasets/JonathanZha/PADBen), MIT licence.

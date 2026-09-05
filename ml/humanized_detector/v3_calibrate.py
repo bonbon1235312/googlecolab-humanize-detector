@@ -29,7 +29,8 @@ def select_operating_threshold(
         raise ValueError("calibration requires both human and AI-labelled records")
 
     best: tuple[float, float, float] | None = None
-    for threshold in np.unique(scores):
+    thresholds = np.append(np.unique(scores), np.nextafter(scores.max(), np.inf))
+    for threshold in thresholds:
         predicted = scores >= threshold
         human_fpr = float(predicted[actual == 0].mean())
         recall = float(predicted[actual == 1].mean())

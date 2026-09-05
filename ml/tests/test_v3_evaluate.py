@@ -52,6 +52,12 @@ def test_select_operating_threshold_maximises_recall_within_human_fpr_ceiling() 
     assert threshold == 0.7
 
 
+def test_select_operating_threshold_can_abstain_when_every_observed_threshold_has_false_positives() -> None:
+    threshold = select_operating_threshold([0, 1], [0.9, 0.2], max_human_fpr=0.0)
+
+    assert threshold > 0.9
+
+
 def test_calibration_record_reports_the_selected_operating_point() -> None:
     record = calibration_record([0, 0, 1, 1], [0.1, 0.6, 0.7, 0.9], max_human_fpr=0.0)
 
