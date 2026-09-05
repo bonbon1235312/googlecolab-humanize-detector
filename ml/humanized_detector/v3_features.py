@@ -1,6 +1,7 @@
 """Deterministic, dependency-free structural features for V3 ablations."""
 
 from dataclasses import dataclass
+from collections import Counter
 import math
 import re
 
@@ -35,7 +36,7 @@ def _safe_std(values: list[float]) -> float:
 def _entropy(text: str) -> float:
     if not text:
         return 0.0
-    frequencies = {character: text.count(character) / len(text) for character in set(text)}
+    frequencies = {character: count / len(text) for character, count in Counter(text).items()}
     return float(-sum(probability * math.log2(probability) for probability in frequencies.values()))
 
 
@@ -48,7 +49,10 @@ def extract_structural_features(text: str) -> np.ndarray:
     sentence_lengths = [len(_WORD.findall(sentence)) for sentence in sentences]
     paragraphs = [paragraph for paragraph in _PARAGRAPH.split(text) if paragraph.strip()]
     paragraph_lengths = [len(_WORD.findall(paragraph)) for paragraph in paragraphs]
-    counts = {word: words.count(word) for word in set(words)}
+    # Counter keeps extraction linear in the number of tokens.  The previous
+    # set + words.count implementation rescanned long documents per unique word
+    # and could make Colab appear stalled before the GPU training stage.
+    counts = Counter(words)
     sentence_std = _safe_std([float(value) for value in sentence_lengths])
     sentence_mean = _safe_mean([float(value) for value in sentence_lengths])
     skew = _safe_mean([((value - sentence_mean) / sentence_std) ** 3 for value in sentence_lengths]) if sentence_std else 0.0
