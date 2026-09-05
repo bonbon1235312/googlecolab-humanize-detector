@@ -1,4 +1,4 @@
-from humanized_detector.v5_1_train import V51RunConfig, copy_frozen_tokenizer, estimated_total_seconds
+from humanized_detector.v5_1_train import V51RunConfig, copy_frozen_tokenizer, estimated_total_seconds, tokenizer_fingerprint
 
 
 def test_timing_estimate_scales_one_balanced_epoch_to_full_two_stage_run() -> None:
@@ -26,3 +26,4 @@ def test_copy_frozen_tokenizer_preserves_the_v4_artifact_files(tmp_path) -> None
 
     assert (destination / "vocab.json").read_text(encoding="utf-8") == '{"<pad>": 0}'
     assert (destination / "merges.txt").is_file()
+    assert tokenizer_fingerprint(source) == tokenizer_fingerprint(destination)

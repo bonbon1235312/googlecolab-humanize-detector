@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import shutil
@@ -50,13 +51,22 @@ def estimated_total_seconds(first_base_epoch_seconds: float, config: V51RunConfi
 
 def copy_frozen_tokenizer(source_dir: Path, destination_dir: Path) -> Path:
     """Copy the V4.8 tokenizer unchanged so V5.1 has identical boundaries."""
-    required = (source_dir / "vocab.json", source_dir / "merges.txt")
-    if not all(path.is_file() for path in required):
-        raise FileNotFoundError("frozen tokenizer must contain vocab.json and merges.txt")
+    source_fingerprint = tokenizer_fingerprint(source_dir)
     destination_dir.mkdir(parents=True, exist_ok=True)
-    for path in required:
+    for path in (source_dir / "vocab.json", source_dir / "merges.txt"):
         shutil.copy2(path, destination_dir / path.name)
+    if tokenizer_fingerprint(destination_dir) != source_fingerprint:
+        raise RuntimeError("copied tokenizer fingerprint does not match the frozen V4 tokenizer")
     return destination_dir
+
+
+def tokenizer_fingerprint(tokenizer_dir: Path) -> dict[str, str]:
+    """SHA-256 hashes for the two byte-BPE artifacts that define boundaries."""
+    names = ("vocab.json", "merges.txt")
+    paths = {name: tokenizer_dir / name for name in names}
+    if not all(path.is_file() for path in paths.values()):
+        raise FileNotFoundError("frozen tokenizer must contain vocab.json and merges.txt")
+    return {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in paths.items()}
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -158,6 +168,7 @@ def train_v51(data_dir: Path, output_dir: Path, frozen_tokenizer_dir: Path, run_
     torch.manual_seed(_SEED)
     train_rows = load_v4_partition(data_dir, "train")
     development_rows = load_v4_partition(data_dir, "development")
+    frozen_tokenizer_hashes = tokenizer_fingerprint(frozen_tokenizer_dir)
     base_dir = output_dir / "base"
     curriculum_dir = output_dir / "curriculum"
     if stage == "base":
@@ -171,19 +182,21 @@ def train_v51(data_dir: Path, output_dir: Path, frozen_tokenizer_dir: Path, run_
         result = _train_stage(model, V3EncodedDataset(train_rows, tokenizer_dir, model_config.max_tokens, normalizer), development_rows, DataLoader(V3EncodedDataset(development_rows, tokenizer_dir, model_config.max_tokens, normalizer), batch_size=run_config.batch_size), base_dir, model_config, run_config, "base", run_config.base_epochs, lambda _epoch: weights, timing_only=timing_only)
         if timing_only and result["first_epoch_seconds"] is not None:
             result["estimated_total_seconds"] = estimated_total_seconds(float(result["first_epoch_seconds"]), run_config)
-        _write_json(base_dir / "run_manifest.json", {"stage": "base", "timing_only": timing_only, "config": asdict(run_config), **result})
+        _write_json(base_dir / "run_manifest.json", {"stage": "base", "timing_only": timing_only, "frozen_tokenizer_sha256": frozen_tokenizer_hashes, "config": asdict(run_config), **result})
         return result
     payload = torch.load(base_dir / "model.pt", map_location="cpu", weights_only=True)
     model_config = V51ModelConfig(**payload["model_config"])
     if not (base_dir / "tokenizer" / "vocab.json").is_file():
         raise FileNotFoundError("V5.1 curriculum requires a completed base tokenizer")
+    if tokenizer_fingerprint(base_dir / "tokenizer") != frozen_tokenizer_hashes:
+        raise RuntimeError("base tokenizer fingerprint does not match the frozen V4 tokenizer")
     curriculum_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(base_dir / "tokenizer", curriculum_dir / "tokenizer", dirs_exist_ok=True)
     shutil.copy2(base_dir / "feature_normalizer.json", curriculum_dir / "feature_normalizer.json")
     normalizer = _load_normalizer(base_dir / "feature_normalizer.json")
     model = V51FusedClassifier(model_config, len(FEATURE_NAMES)); model.load_state_dict(payload["state_dict"])
     result = _train_stage(model, V3EncodedDataset(train_rows, base_dir / "tokenizer", model_config.max_tokens, normalizer), development_rows, DataLoader(V3EncodedDataset(development_rows, base_dir / "tokenizer", model_config.max_tokens, normalizer), batch_size=run_config.batch_size), curriculum_dir, model_config, run_config, "curriculum", run_config.curriculum_epochs, lambda epoch: hierarchical_weights(train_rows, curriculum_mix(epoch)))
-    _write_json(curriculum_dir / "run_manifest.json", {"stage": "curriculum", "base_checkpoint": str(base_dir / "model.pt"), "config": asdict(run_config), **result})
+    _write_json(curriculum_dir / "run_manifest.json", {"stage": "curriculum", "base_checkpoint": str(base_dir / "model.pt"), "frozen_tokenizer_sha256": frozen_tokenizer_hashes, "config": asdict(run_config), **result})
     return result
 
 
