@@ -17,6 +17,40 @@ python -m humanized_detector.v6_beemo \
 
 Splitting and sampling occur later, across the combined candidate pool.
 
+## Other source adapters
+
+HumanizerBench records retain the original source model as `origin=ai`; a
+humanizer rewrite is still AI-origin, with `edit_actor=llm`. The adapter checks
+that each published test's input exactly matches its declared source sample.
+
+```bash
+python -m humanized_detector.v6_humanizerbench \
+  --cycle-dir "/content/humanizerbench/data/cycles/August 2026" \
+  --output-jsonl /content/drive/MyDrive/v6-normalized/humanizerbench_candidates.jsonl
+```
+
+MAGE uses the public `src` provenance field and checks it against MAGE's
+published label. Its source groups must be split before sampling:
+
+```python
+from humanized_detector.v6_split import assign_mage_source_splits
+```
+
+JFLEG sources and corrections are human-origin hard-negative evidence, but its
+CC BY-NC-SA 4.0 licence means it is **diagnostic-only** for the public V6
+release unless separate permission is established. Do not include it in a
+deployment-authorized source list.
+
+Apply declared variant caps only after source/lineage partitioning:
+
+```python
+from humanized_detector.v6_sampling import cap_variants_per_lineage
+```
+
+The first published HumanizerBench cycle has fully crossed template and editor
+families. Keeping that cycle train-only avoids a silent template/editor split
+leak; MAGE supplies source-held `selection_dev` and `calibration` evidence.
+
 ```bash
 python -m humanized_detector.v6_manifest \
   --records-jsonl /content/drive/MyDrive/v6-data/normalized_records.jsonl \
