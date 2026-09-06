@@ -3,6 +3,20 @@
 V6 does not authorize training until this command finishes with
 `"TRAINING AUTHORIZED": "YES"`.
 
+## Beemo adapter
+
+Run this immediately after acquiring the pinned Beemo parquet. It writes an
+**unsplit** candidate pool and prints the raw download SHA-256. It refuses an
+AI-origin row when the source record lacks an explicit generator family.
+
+```bash
+python -m humanized_detector.v6_beemo \
+  --input-parquet /content/drive/MyDrive/v6-raw/beemo.parquet \
+  --output-jsonl /content/drive/MyDrive/v6-normalized/beemo_candidates.jsonl
+```
+
+Splitting and sampling occur later, across the combined candidate pool.
+
 ```bash
 python -m humanized_detector.v6_manifest \
   --records-jsonl /content/drive/MyDrive/v6-data/normalized_records.jsonl \
