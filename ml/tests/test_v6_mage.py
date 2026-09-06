@@ -11,6 +11,8 @@ def test_mage_adapter_uses_declared_source_and_checks_the_dataset_label() -> Non
 
     assert [(candidate.origin, candidate.label) for candidate in candidates] == [("human", 0), ("ai", 1)]
     assert candidates[0].domain == "cmv"
+    assert candidates[0].source_family == "cmv_human"
+    assert candidates[1].source_family == "roct_machine_continuation_flan_t5_large"
     assert candidates[1].generator_family == "mage:roct_machine_continuation_flan_t5_large"
     assert candidates[1].transformation == "raw_generation"
 

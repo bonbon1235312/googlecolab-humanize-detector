@@ -44,7 +44,7 @@ def adapt_mage_rows(rows: Sequence[Mapping[str, object]]) -> list[V6BeemoCandida
             text=text,
             dataset="mage",
             domain=domain,
-            source_family="mage",
+            source_family=source,
             template_id="not_applicable",
             origin=origin,
             edit_actor="not_applicable",
