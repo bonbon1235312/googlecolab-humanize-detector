@@ -1,8 +1,11 @@
+import time
+
 import pytest
 
 from humanized_detector.v6_manifest import (
     V6Record,
     V6Source,
+    _candidate_pairs,
     audit_v6_pretrain,
     build_v6_manifest,
     canonical_text,
@@ -103,6 +106,24 @@ def test_audit_does_not_apply_shingle_near_dedup_to_short_diagnostic_text() -> N
     audit = audit_v6_pretrain(records, {"beemo": source()})
 
     assert audit.training_authorized is True
+
+
+def test_minhash_candidate_discovery_is_practical_for_a_document_cohort() -> None:
+    records = [
+        V6Record.from_mapping(
+            row(
+                f"record:{index}",
+                f"lineage:{index}",
+                " ".join(f"document{index}_token{token}" for token in range(250)),
+                "train",
+            )
+        )
+        for index in range(100)
+    ]
+
+    started = time.monotonic()
+    _candidate_pairs(records)
+    assert time.monotonic() - started < 3.0
 
 
 def test_audit_rejects_a_non_deployable_source_from_training() -> None:

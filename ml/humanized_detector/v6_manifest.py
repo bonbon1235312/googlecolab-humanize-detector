@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+import numpy as np
+
 
 PROTOCOL_VERSION = "v6"
 VALID_SPLITS = frozenset({"train", "selection_dev", "calibration"})
@@ -20,6 +22,21 @@ _FORBIDDEN = frozenset({"", "tbd", "unknown", "none", "null", "n/a"})
 _WHITESPACE = re.compile(r"\s+")
 _MINHASH_PERMUTATIONS = 128
 _MINHASH_BAND_SIZE = 4
+_MINHASH_PRIME = 2_147_483_647
+
+
+def _minhash_coefficients() -> tuple[np.ndarray, np.ndarray]:
+    """Create the frozen 128 deterministic universal-hash permutations."""
+    first: list[int] = []
+    second: list[int] = []
+    for seed in range(_MINHASH_PERMUTATIONS):
+        digest = hashlib.blake2b(f"v6-minhash:{seed}".encode("utf-8"), digest_size=8).digest()
+        first.append(1 + int.from_bytes(digest[:4], "big") % (_MINHASH_PRIME - 1))
+        second.append(int.from_bytes(digest[4:], "big") % _MINHASH_PRIME)
+    return np.asarray(first, dtype=np.uint64), np.asarray(second, dtype=np.uint64)
+
+
+_MINHASH_A, _MINHASH_B = _minhash_coefficients()
 
 
 def canonical_text(text: str) -> str:
@@ -64,11 +81,13 @@ def _minhash_signature(shingles: Iterable[str]) -> tuple[int, ...]:
     values = tuple(shingles)
     if not values:
         return tuple(2**64 - 1 for _ in range(_MINHASH_PERMUTATIONS))
-    signature: list[int] = []
-    for seed in range(_MINHASH_PERMUTATIONS):
-        minimum = min(int.from_bytes(hashlib.blake2b(f"{seed}:{item}".encode("utf-8"), digest_size=8).digest(), "big") for item in values)
-        signature.append(minimum)
-    return tuple(signature)
+    hashes = np.fromiter(
+        (int.from_bytes(hashlib.blake2b(item.encode("utf-8"), digest_size=4).digest(), "big") % _MINHASH_PRIME for item in values),
+        dtype=np.uint64,
+        count=len(values),
+    )
+    permuted = (_MINHASH_A[:, None] * hashes[None, :] + _MINHASH_B[:, None]) % _MINHASH_PRIME
+    return tuple(int(value) for value in np.min(permuted, axis=1))
 
 
 def _candidate_pairs(records: Sequence["V6Record"]) -> set[tuple[int, int]]:
