@@ -25,7 +25,7 @@ def adapt_mage_rows(rows: Sequence[Mapping[str, object]]) -> list[V6BeemoCandida
     output: list[V6BeemoCandidate] = []
     for index, row in enumerate(rows):
         text = str(row.get("text") or "").strip()
-        source = str(row.get("source") or "").strip()
+        source = str(row.get("src") or "").strip()
         if not text or not source:
             raise ValueError(f"MAGE row {index} lacks text or source provenance")
         origin = _origin_from_source(source)
