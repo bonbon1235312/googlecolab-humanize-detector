@@ -68,6 +68,9 @@ def adapt_humanizerbench_cycle(
         raw_text = _value(sample, "input_text")
         if not template_id or not domain or not generator_family or not raw_text:
             raise ValueError(f"HumanizerBench sample {sample_id} has incomplete provenance")
+        declared_input = _value(test, "input_text")
+        if declared_input and declared_input != raw_text:
+            raise ValueError(f"HumanizerBench test {test_id} input disagrees with source sample {sample_id}")
         lineage_id = f"humanizerbench:{cycle}:{sample_id}"
         if sample_id not in emitted_raw:
             output.append(_candidate(

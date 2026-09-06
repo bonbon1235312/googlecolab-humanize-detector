@@ -38,3 +38,19 @@ def test_humanizerbench_adapter_rejects_a_test_without_its_declared_source_sampl
         assert "missing source sample" in str(error)
     else:
         raise AssertionError("expected missing sample provenance to fail closed")
+
+
+def test_humanizerbench_adapter_rejects_a_test_whose_input_disagrees_with_the_source_sample() -> None:
+    samples = [{
+        "id": "sample-1", "prompt_slug": "essay", "category": "academic", "source_model_slug": "gpt", "input_text": "original"
+    }]
+    tests = [{
+        "id": "test-1", "sample_id": "sample-1", "humanizer_slug": "tool", "input_text": "different", "output_text": "rewrite"
+    }]
+
+    try:
+        adapt_humanizerbench_cycle(samples, tests, cycle="August 2026")
+    except ValueError as error:
+        assert "input disagrees" in str(error)
+    else:
+        raise AssertionError("expected source-input mismatch to fail closed")
