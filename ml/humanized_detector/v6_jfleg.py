@@ -30,13 +30,18 @@ def _candidate(*, identifier: str, lineage_id: str, text: str, edit_actor: str, 
     )
 
 
-def adapt_jfleg_rows(rows: Sequence[Mapping[str, object]], *, split_name: str) -> list[V6BeemoCandidate]:
+def adapt_jfleg_rows(
+    rows: Sequence[Mapping[str, object]], *, split_name: str, source_indices: Sequence[int] | None = None
+) -> list[V6BeemoCandidate]:
     """Emit source and correction branches as human-origin records; never infer machine authorship."""
     if not split_name.strip():
         raise ValueError("JFLEG split name must be explicit")
+    if source_indices is not None and len(source_indices) != len(rows):
+        raise ValueError("JFLEG source_indices must align one-to-one with rows")
     output: list[V6BeemoCandidate] = []
     for index, row in enumerate(rows):
-        lineage_id = f"jfleg:{split_name}:{index}"
+        source_index = index if source_indices is None else source_indices[index]
+        lineage_id = f"jfleg:{split_name}:{source_index}"
         source = str(row.get("sentence") or "").strip()
         corrections = row.get("corrections")
         if not isinstance(corrections, Sequence) or isinstance(corrections, (str, bytes)):
