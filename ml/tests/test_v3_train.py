@@ -6,7 +6,7 @@ import torch
 
 from humanized_detector.model import ModelConfig
 from humanized_detector.v3_calibrate import calibrate_checkpoint
-from humanized_detector.v3_train import is_eligible_checkpoint, make_token_windows, source_label_weights, train_v3_model
+from humanized_detector.v3_train import explicit_sampling_weights, is_eligible_checkpoint, make_token_windows, source_label_weights, train_v3_model
 
 
 def test_make_token_windows_selects_beginning_middle_and_end() -> None:
@@ -23,6 +23,12 @@ def test_source_label_weights_balance_each_nonempty_stratum() -> None:
         totals[row["source"], row["label"]] = totals.get((row["source"], row["label"]), 0.0) + weight
 
     np.testing.assert_allclose(list(totals.values()), [1.0, 1.0, 1.0, 1.0])
+
+
+def test_explicit_sampling_weights_preserve_the_frozen_manifest_values() -> None:
+    rows = [{"sampling_weight": 0.25}, {"sampling_weight": 1.0}, {"sampling_weight": 0.5}]
+
+    assert explicit_sampling_weights(rows) == [0.25, 1.0, 0.5]
 
 
 def test_checkpoint_selection_uses_development_ranking_before_calibration() -> None:
@@ -59,6 +65,24 @@ def test_train_v3_model_records_nondefault_warmup_clipping_and_smoothing(tmp_pat
     payload = torch.load(result.checkpoint, map_location="cpu", weights_only=True)
 
     assert payload["training_config"] == {"learning_rate": 1e-4, "weight_decay": 0.01, "label_smoothing": 0.02, "warmup_steps": 1, "grad_clip_norm": 1.0}
+
+
+def test_train_v3_model_embeds_explicit_checkpoint_provenance(tmp_path: Path) -> None:
+    rows = [
+        {"id": "h1", "text": "human authored response alpha", "label": 0, "source": "padben"},
+        {"id": "a1", "text": "generated response alpha", "label": 1, "source": "beemo"},
+    ]
+    for name in ("train", "development"):
+        (tmp_path / f"{name}.jsonl").write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+
+    result = train_v3_model(
+        tmp_path / "train.jsonl", tmp_path / "development.jsonl", tmp_path / "artifacts",
+        ModelConfig(vocab_size=300, hidden_size=24, heads=4, layers=1, max_tokens=8), "text_mean",
+        epochs=1, batch_size=2, checkpoint_provenance={"protocol_version": "v6", "manifest_sha256": "a" * 64},
+    )
+
+    payload = torch.load(result.checkpoint, map_location="cpu", weights_only=True)
+    assert payload["checkpoint_provenance"] == {"protocol_version": "v6", "manifest_sha256": "a" * 64}
 
 
 def test_calibrate_checkpoint_writes_operating_threshold(tmp_path: Path) -> None:

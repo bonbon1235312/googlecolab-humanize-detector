@@ -51,6 +51,14 @@ def source_label_weights(rows: list[dict[str, object]]) -> list[float]:
     return [1.0 / counts[(str(row["source"]), int(row["label"]))] for row in rows]
 
 
+def explicit_sampling_weights(rows: list[dict[str, object]]) -> list[float]:
+    """Read a pre-audited positive sampling weight from every training row."""
+    weights = [float(row["sampling_weight"]) for row in rows]
+    if any(weight <= 0 for weight in weights):
+        raise ValueError("explicit sampling weights must be positive")
+    return weights
+
+
 def is_eligible_checkpoint(metrics: dict[str, object]) -> bool:
     """Select by ranking quality; operating thresholds belong to calibration."""
     roc_auc = metrics.get("roc_auc")
@@ -125,6 +133,8 @@ def train_v3_model(
     label_smoothing: float = 0.1,
     warmup_steps: int = 0,
     grad_clip_norm: float | None = None,
+    sampling_weights: list[float] | None = None,
+    checkpoint_provenance: dict[str, object] | None = None,
 ) -> V3TrainingResult:
     """Train one predeclared V3 ablation and retain its best development-F1 checkpoint."""
     torch.manual_seed(20260903)
@@ -135,6 +145,11 @@ def train_v3_model(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     train_rows = load_v3_jsonl(train_file)
     development_rows = load_v3_jsonl(development_file)
+    if sampling_weights is not None:
+        if len(sampling_weights) != len(train_rows):
+            raise ValueError("sampling weight count must match the training rows")
+        if any(weight <= 0 for weight in sampling_weights):
+            raise ValueError("sampling weights must be positive")
     tokenizer_dir = train_tokenizer(train_file, artifact_dir / "tokenizer", config.vocab_size)
     config = replace(config, vocab_size=len(load_tokenizer(tokenizer_dir).get_vocab()))
     train_feature_values = np.asarray([extract_structural_features(str(row["text"])) for row in train_rows])
@@ -144,7 +159,7 @@ def train_v3_model(
     np.savez_compressed(artifact_dir / "structural_feature_cache.npz", train_ids=np.asarray([str(row["id"]) for row in train_rows]), train_features=train_feature_values, development_ids=np.asarray([str(row["id"]) for row in development_rows]), development_features=np.asarray([extract_structural_features(str(row["text"])) for row in development_rows]))
     train_dataset = V3EncodedDataset(train_rows, tokenizer_dir, config.max_tokens, normalizer)
     development_dataset = V3EncodedDataset(development_rows, tokenizer_dir, config.max_tokens, normalizer)
-    sampler = WeightedRandomSampler(source_label_weights(train_rows), num_samples=len(train_rows), replacement=True)
+    sampler = WeightedRandomSampler(sampling_weights or source_label_weights(train_rows), num_samples=len(train_rows), replacement=True)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
     development_loader = DataLoader(development_dataset, batch_size=batch_size)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -185,7 +200,7 @@ def train_v3_model(
         candidate_key = _checkpoint_key(metrics)
         if candidate_key > best_key:
             best_key = candidate_key
-            torch.save({
+            payload: dict[str, object] = {
                 "model_config": config.__dict__,
                 "variant": variant,
                 "state_dict": model.state_dict(),
@@ -196,7 +211,10 @@ def train_v3_model(
                     "warmup_steps": warmup_steps,
                     "grad_clip_norm": grad_clip_norm,
                 },
-            }, checkpoint)
+            }
+            if checkpoint_provenance is not None:
+                payload["checkpoint_provenance"] = dict(checkpoint_provenance)
+            torch.save(payload, checkpoint)
             metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
         if not warmup_steps:
             scheduler.step()
